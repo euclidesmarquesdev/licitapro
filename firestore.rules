@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Match section for Licitacoes collection
+    match /licitacoes/{licitacaoId} {
+      // Create conditions
+      allow create: if isSignedIn()
+        && isValidId(licitacaoId)
+        && incoming().userId == request.auth.uid
+        && incoming().status is string
+        && incoming().edital is string
+        && incoming().orgao is string;
+
+      // Read & delete conditions: Only the owner of the document can read or delete
+      allow read, delete: if isSignedIn()
+        && existing().userId == request.auth.uid;
+
+      // Update conditions: Only the owner can update, keeping userId immutable
+      allow update: if isSignedIn()
+        && existing().userId == request.auth.uid
+        && incoming().userId == request.auth.uid;
+    }
+  }
+}

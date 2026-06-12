@@ -1,0 +1,38 @@
+{
+  "entities": {
+    "Licitacao": {
+      "title": "Licitacao",
+      "description": "Uma licitação acompanhada pela empresa, incluindo checklist de documentos, contatos de fornecedores, concorrentes e alertas.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "url": { "type": "string" },
+        "edital": { "type": "string" },
+        "orgao": { "type": "string" },
+        "modalidade": { "type": "string" },
+        "objeto": { "type": "string" },
+        "valorEstimado": { "type": "number" },
+        "dataSessao": { "type": "string" },
+        "cidade": { "type": "string" },
+        "estado": { "type": "string" },
+        "categoria": { "type": "string" },
+        "status": { "type": "string" },
+        "historicStatus": { "type": "array" },
+        "checklist": { "type": "array" },
+        "suppliers": { "type": "array" },
+        "competitors": { "type": "array" },
+        "alerts": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "edital", "orgao", "modalidade", "status"]
+    }
+  },
+  "firestore": {
+    "/licitacoes/{licitacaoId}": {
+      "schema": "Licitacao",
+      "description": "Coleção principal de licitações cadastradas."
+    }
+  }
+}
