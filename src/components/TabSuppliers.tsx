@@ -281,7 +281,7 @@ export default function TabSuppliers({
               />
             </div>
             <div className="text-[10px] text-indigo-900 font-bold font-sans">
-              {showAllCatalog ? "🔍 Buscando no Catálogo Inteiro" : "⚡ Sugestões Ordenadas por Afinidade"}
+              {showAllCatalog ? "🔍 Buscando no Catálogo Inteiro" : "⚡ Sugestões Personalizadas"}
             </div>
           </div>
         </div>
@@ -299,21 +299,15 @@ export default function TabSuppliers({
               {paginatedCatalogSups.map((sup, idx) => {
                 const supplierIndex = activeSuppliers.findIndex(s => s.name.toLowerCase() === sup.name.toLowerCase());
                 const isAdded = supplierIndex !== -1;
-                const matchesCount = sup.affinityScore || 0;
 
                 return (
-                  <div key={idx} className="bg-white p-3.5 rounded-xl border border-indigo-100/80 hover:border-indigo-300 transition shadow-2xs flex flex-col justify-between gap-2.5 font-sans relative">
+                   <div key={idx} className="bg-white p-3.5 rounded-xl border border-indigo-100/80 hover:border-indigo-300 transition shadow-2xs flex flex-col justify-between gap-2.5 font-sans relative">
                     <div className="space-y-1">
                       <div className="flex items-start justify-between gap-1 flex-wrap">
                         <h4 className="text-xs font-black text-slate-800 truncate block max-w-[70%]" title={sup.name}>
                           {sup.name}
                         </h4>
                         <div className="flex items-center gap-1 shrink-0">
-                          {matchesCount > 0 && (
-                            <span className="text-[8.5px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 px-1 py-0.2 rounded border border-amber-200">
-                              ⭐ Afinidade
-                            </span>
-                          )}
                           <span className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded ${
                             compSups.some(cs => cs.name === sup.name)
                               ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
@@ -326,13 +320,6 @@ export default function TabSuppliers({
                       <p className="text-[10px] text-slate-600 leading-tight">
                         <strong>Produto padrão:</strong> {sup.product}
                       </p>
-                      
-                      {matchesCount > 0 && (
-                        <div className="text-[9.5px] bg-indigo-50/50 text-indigo-900 p-1 rounded border border-indigo-100/30 flex items-center gap-1">
-                          <Sparkles className="w-3 h-3 text-indigo-500 shrink-0" />
-                          <span>Excelente afinidade com {licitacao.categoria || "o edital"}</span>
-                        </div>
-                      )}
 
                       <div className="space-y-0.5 mt-1 border-t border-slate-100 pt-1.5">
                         <div className="text-[10px] text-slate-600 flex items-center gap-1.5">
