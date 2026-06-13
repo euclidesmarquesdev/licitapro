@@ -121,6 +121,15 @@ export default function TabPredict({
               </ul>
             </div>
           </div>
+
+          {/* Strong Legal Disclaimer */}
+          <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl flex items-start gap-3 mt-4 text-[10.5px] text-amber-900 leading-normal font-sans">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-bold block uppercase tracking-wide mb-0.5 text-amber-950">Isenção de Responsabilidade Jurídica & Preceitos da Lei 14.133/2021</strong>
+              As estimativas de preços, faixas de desconto recomendadas, margens sugeridas e probabilidades estatísticas fornecidas pelo mecanismo do LicitaPro são puramente consultivas e para fins de preparação de cenários. Estes resultados não configuram promessa, direito líquido ou garantia absoluta de adjudicação, devendo obrigatoriamente ser homologados e validados pelo departamento jurídico ou analistas seniores antes de qualquer lance firme em sessões públicas do PNCP.
+            </div>
+          </div>
         </div>
       )}
     </div>

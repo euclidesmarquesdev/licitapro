@@ -12,6 +12,11 @@ import LicitacaoDetails from "./components/LicitacaoDetails";
 import AlertsManager from "./components/AlertsManager";
 import GeneralSuppliers from "./components/GeneralSuppliers";
 import { parsePncpClipboardText, parseBrazilianDateToISO } from "./utils/pncpParser";
+import { 
+  getLocalLicitacoes, saveLocalLicitacao, deleteLocalLicitacao, 
+  getLocalCompanySettings, saveLocalCompanySettings, bulkSaveLocalLicitacoes 
+} from "./utils/indexedDb";
+import BackupModal from "./components/BackupModal";
 
 // Firebase imports
 import { auth, db, googleProvider, signInWithPopup, signOut } from "./firebase";
@@ -95,6 +100,7 @@ export default function App() {
 
   // Global Alerts Panel overlay
   const [showGlobalAlerts, setShowGlobalAlerts] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState(false);
 
   // Company details
   const [companySettings, setCompanySettings] = useState<CompanySetting>(MOCK_COMPANY_DETAILS);
@@ -143,12 +149,26 @@ export default function App() {
     tamanho?: string;
   }[]>([]);
 
-  // Loading settings from localStorage if exist
+  // Loading settings from IndexedDB (with backwards compatible localStorage fallback)
   useEffect(() => {
-    const saved = localStorage.getItem("LICI_TRACK_V1_company_settings");
-    if (saved) {
-      try { setCompanySettings(JSON.parse(saved)); } catch (_) {}
+    async function loadSettings() {
+      try {
+        const savedDb = await getLocalCompanySettings();
+        if (savedDb) {
+          setCompanySettings(savedDb);
+        } else {
+          const savedLocal = localStorage.getItem("LICI_TRACK_V1_company_settings");
+          if (savedLocal) {
+            const parsed = JSON.parse(savedLocal);
+            setCompanySettings(parsed);
+            await saveLocalCompanySettings(parsed);
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao carregar as configurações de empresa:", err);
+      }
     }
+    loadSettings();
   }, []);
 
 
@@ -182,19 +202,43 @@ export default function App() {
     if (authLoading) return;
 
     if (isGuestMode || (user && user.isVirtual)) {
-      const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
+      setLoadingList(true);
+      const userId = user ? user.uid : "guest-user";
+      
+      async function syncLocalDb() {
         try {
-          setLicitacoes(JSON.parse(saved));
-        } catch (_) {
+          const items = await getLocalLicitacoes(userId);
+          if (items && items.length > 0) {
+            setLicitacoes(items);
+          } else {
+            // Retrocompatibility check
+            const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved);
+                setLicitacoes(parsed);
+                await bulkSaveLocalLicitacoes(parsed);
+              } catch (_) {
+                setLicitacoes(MOCK_LICITACOES);
+                const initializedMock = MOCK_LICITACOES.map(item => ({ ...item, userId }));
+                await bulkSaveLocalLicitacoes(initializedMock);
+              }
+            } else {
+              setLicitacoes(MOCK_LICITACOES);
+              const initializedMock = MOCK_LICITACOES.map(item => ({ ...item, userId }));
+              await bulkSaveLocalLicitacoes(initializedMock);
+            }
+          }
+        } catch (err) {
+          console.error("Erro sincronizando banco de dados local IndexedDB:", err);
           setLicitacoes(MOCK_LICITACOES);
+        } finally {
+          setLoadingList(false);
         }
-      } else {
-        setLicitacoes(MOCK_LICITACOES);
-        localStorage.setItem(storageKey, JSON.stringify(MOCK_LICITACOES));
       }
-      setLoadingList(false);
+      
+      syncLocalDb();
       return;
     }
 
@@ -233,6 +277,9 @@ export default function App() {
       if (isGuestMode || (user && user.isVirtual)) {
         const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
         localStorage.setItem(storageKey, JSON.stringify(newList));
+        
+        // Save to IndexedDB
+        saveLocalLicitacao(updated);
       }
       return newList;
     });
@@ -500,6 +547,9 @@ export default function App() {
     if (isGuestMode || (user && user.isVirtual)) {
       const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
       localStorage.setItem(storageKey, JSON.stringify(updatedList));
+      
+      // Save item to IndexedDB
+      saveLocalLicitacao(newItem);
     } else if (user) {
       try {
         await setDoc(doc(db, "licitacoes", newId), newItem);
@@ -538,6 +588,9 @@ export default function App() {
     if (isGuestMode || (user && user.isVirtual)) {
       const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
       localStorage.setItem(storageKey, JSON.stringify(updatedList));
+      
+      // Delete item from IndexedDB
+      await deleteLocalLicitacao(id);
       if (selectedLicitacaoId === id) setSelectedLicitacaoId(null);
     } else {
       try {
@@ -592,9 +645,25 @@ export default function App() {
     });
   };
 
-  const handleUpdateCompanySettings = (settings: CompanySetting) => {
+  const handleUpdateCompanySettings = async (settings: CompanySetting) => {
     setCompanySettings(settings);
     localStorage.setItem("LICI_TRACK_V1_company_settings", JSON.stringify(settings));
+    await saveLocalCompanySettings(settings);
+  };
+
+  const handleRestoreComplete = async () => {
+    try {
+      const userId = user ? user.uid : "guest-user";
+      const refetched = await getLocalLicitacoes(userId);
+      setLicitacoes(refetched);
+      
+      const savedDb = await getLocalCompanySettings();
+      if (savedDb) {
+        setCompanySettings(savedDb);
+      }
+    } catch (err) {
+      console.error("Erro ao aplicar o backup restaurado:", err);
+    }
   };
 
   const handleGoogleLogin = async () => {
@@ -991,6 +1060,14 @@ export default function App() {
                     <PlusCircle className="w-4 h-4" />
                     Monitorar Outro Edital
                   </button>
+
+                  <button
+                    onClick={() => setShowBackupModal(true)}
+                    className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Database className="w-4 h-4 text-slate-305" />
+                    Backup Local
+                  </button>
                 </div>
               </div>
 
@@ -1149,6 +1226,9 @@ export default function App() {
                     <li>Pressione <kbd className="bg-white border px-1 rounded shadow-none text-[10px]">Ctrl+A</kbd> e depois <kbd className="bg-white border px-1 rounded shadow-none text-[10px]">Ctrl+C</kbd> para copiar todo o texto da página da licitação.</li>
                     <li>Cole inteiramente no campo de texto abaixo e clique em <strong>Processar Ficha PNCP</strong>.</li>
                   </ol>
+                  <p className="text-[9.5px] text-amber-800 bg-amber-50 rounded border border-amber-100 mt-3 p-2 font-medium">
+                    ⚠️ <strong>Nota Preventiva Legal:</strong> Os lotes, valores de referência, anexos e regras extraídos por este motor têm finalidade administrativa de rascunho de preenchimento. Cabe exclusivamente ao licitante auditar o teor dos campos em face do edital oficial antes de concluir a gravação da proposta.
+                  </p>
                 </div>
 
                 <div>
@@ -1518,6 +1598,13 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Backup and Restore Modal */}
+      <BackupModal
+        isOpen={showBackupModal}
+        onClose={() => setShowBackupModal(false)}
+        onRestoreComplete={handleRestoreComplete}
+      />
     </div>
   );
 }

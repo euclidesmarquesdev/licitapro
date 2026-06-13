@@ -49,7 +49,8 @@ O sistema é dividido em módulos analíticos táticos, consolidados sob uma int
 ### 5. 📦 Catálogo de Fornecedores, Margens Completas & Tri-setorial
 *   **Margem de Desconto Completa vs. Gov (Visão de Análise de Preços)**: Diferente de sistemas comuns que mostram apenas a margem do líder, o LicitaPro exibe a margem de desconto exata de **todos** os fornecedores cadastrados e com preços ativos na grade comparativa. O analista visualiza instantaneamente quem está abaixo (`% abaixo do preço teto`), acima (`% acima`) ou igual ao teto oficial do certame governamental para rápidas decisões de negociação.
 *   **Limitador e Filtro Inteligente de Visualização**: Opção integrada de selecionar os "Top 3 Fornecedores com Melhor Desconto" ou alternar para o "Catálogo Completo de Fornecedores", viabilizando legibilidade total mesmo em editais complexos com dezenas de cotações concorrentes.
-*   **Integração Persistente com localStorage**: Banco geral global integrado para salvar fornecedores parceiros de suprimentos recorrentes.
+*   **Migração para IndexedDB (Dexie.js)**: Substituição completa do motor original baseado em `localStorage` pelo banco corporativoIndexedDB via `Dexie.js`. Garante armazenamento estável de centenas de editais com transações assíncronas de alto desempenho de forma 100% privada e local.
+*   **Painel Integrado de Exportação & Importação de Backups**: Sistema de backup estático seguro que permite baixar com um clique um snapshot consolidado da base de propostas, licitações salvas e dados da empresa no formato `.JSON`, possibilitando restaurar o progresso completo em qualquer máquina de forma soberana offline.
 *   **Casamento Inteligente de Portfólio**: Algoritmo de mapeamento por palavras-chave relevantes conecta automaticamente itens do edital extraídos do PNCP com os produtos e descontos oferecidos pelos parceiros compatíveis no catálogo.
 
 ### 6. 🔔 Central de Alertas Inteligente (Gestão de Prazos)
@@ -69,7 +70,7 @@ A engenharia do SAL foi modelada em uma infraestrutura full-stack moderna e de a
 | **Backend API** | `Express 4.x` | Servidor corporativo RESTful acoplado para proxy de APIs ocultas. |
 | **Linguagem** | `TypeScript ~5.8` | Tipagem estática em ambas as pontas para máxima tolerância a bugs. |
 | **Engine de Inteligência**| `@google/genai` (SDK Oficial) | Chamadas nativas ao modelo multimodal `gemini-3.5-flash`. |
-| **Banco de Dados** | `Firebase Cloud Firestore` | Persistência de dados das licitações, listas de verificação e notas. |
+| **Banco de Dados** | `Cloud Firestore` & `Dexie.js / IndexedDB` | Banco híbrido: persistência corporativa em nuvem ou modo local estático de alto desempenho com backup. |
 | **Autenticação** | `Firebase Auth` / Configuração | Segurança federada robusta para as credenciais corporativas. |
 | **Animações** | `motion/react` | Transições corporativas fluidas e dinâmicas nos painéis. |
 | **Empacotamento Prod** | `esbuild` | Compila o Express TypeScript em CommonJS autônomo para produção. |

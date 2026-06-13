@@ -222,6 +222,15 @@ export default function TabReport({
               <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 text-xs font-sans text-gray-850 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
                 {docContentResult}
               </div>
+
+              {/* Strong Legal Notice on AI Output */}
+              <div className="mt-4 p-3 bg-red-50/80 border border-red-200 rounded-xl flex items-start gap-3 text-[10.5px] text-red-900 leading-normal font-sans">
+                <FileCheck className="w-4 h-4 text-red-650 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="font-bold block uppercase tracking-wide mb-0.5 text-red-950">Aviso Legítimo de Minuta Preliminar</strong>
+                  Este documento foi redigido automaticamente via inteligência artificial (Gemini) com fins exclusivamente de rascunho de apoio. De acordo com a Lei de Licitações (Lei 14.133/21) e normativas de controle, esta minuta não possui validade oficial imediata e é obrigatória a devida revisão, complementação e assinatura formal por assessor técnico ou representante devidamente constituído.
+                </div>
+              </div>
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center py-16 text-center">

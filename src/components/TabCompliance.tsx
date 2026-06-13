@@ -31,7 +31,7 @@ export default function TabCompliance({
 }: TabProps) {
   // Simulator local states
   const [simIsMeEpp, setSimIsMeEpp] = useState(true);
-  const [simModalidade, setSimModalidade] = useState<"pregao" | "concorrencia font-sans">("pregao");
+  const [simModalidade, setSimModalidade] = useState<"pregao" | "concorrencia">("pregao");
   const [simLeaderBidText, setSimLeaderBidText] = useState("");
   const [simOurBidText, setSimOurBidText] = useState("");
 
