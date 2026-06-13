@@ -326,3 +326,47 @@ export function parsePncpClipboardText(text: string): ParsedPncp {
 
   return result;
 }
+
+export function parseBrazilianDateToISO(dateStr: string): string {
+  if (!dateStr) {
+    return new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16);
+  }
+  
+  // Clean string
+  const cleanStr = dateStr.trim();
+  
+  // If it's already ISO (starts with YYYY-MM-DD or contains T)
+  if (/^\d{4}-\d{2}-\d{2}/.test(cleanStr)) {
+    // If it has timezone or complete ISO, slice to meet datetime-local format (YYYY-MM-DDTHH:mm)
+    return cleanStr.includes("T") ? cleanStr.replace(" ", "T").substring(0, 16) : `${cleanStr}T09:00`;
+  }
+  
+  // Match DD/MM/YYYY or DD/MM/YY
+  const dateWithTimeMatch = cleanStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?)?/);
+  
+  if (dateWithTimeMatch) {
+    const [, day, month, year, hours, minutes] = dateWithTimeMatch;
+    
+    const formattedDay = day.padStart(2, '0');
+    const formattedMonth = month.padStart(2, '0');
+    const formattedYear = year.length === 2 ? `20${year}` : year;
+    const formattedHours = (hours || "09").padStart(2, '0');
+    const formattedMinutes = (minutes || "00").padStart(2, '0');
+    
+    // Construct valid string for Date constructor
+    const dateQuery = `${formattedYear}-${formattedMonth}-${formattedDay}T${formattedHours}:${formattedMinutes}`;
+    const testDate = new Date(dateQuery);
+    if (!isNaN(testDate.getTime())) {
+      return dateQuery;
+    }
+  }
+  
+  // Fallback to normal Date parsing if possible
+  const fallbackDate = new Date(cleanStr);
+  if (!isNaN(fallbackDate.getTime())) {
+    return fallbackDate.toISOString().substring(0, 16);
+  }
+  
+  // Last resort: future fallback (10 days from now)
+  return new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16);
+}

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Licitacao, CompetitorBid } from "../types";
-import { Landmark, Plus, Trash2 } from "lucide-react";
+import { Landmark, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { isValidCNPJ, formatCNPJ } from "../utils/validation";
 
 interface TabProps {
   licitacao: Licitacao;
@@ -20,14 +21,32 @@ export default function TabCompetitors({
   const [compName, setCompName] = useState("");
   const [compCnpj, setCompCnpj] = useState("");
   const [compBid, setCompBid] = useState(0);
+  const [cnpjError, setCnpjError] = useState("");
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!compName.trim()) return;
+    
+    if (compCnpj.trim() && !isValidCNPJ(compCnpj)) {
+      setCnpjError("CNPJ inválido. Verifique se o formato e os dígitos estão corretos.");
+      return;
+    }
+    
     handleAddCompetitor(compName, compCnpj, compBid);
     setCompName("");
     setCompCnpj("");
     setCompBid(0);
+    setCnpjError("");
+  };
+
+  const handleCnpjChange = (val: string) => {
+    const masked = formatCNPJ(val);
+    setCompCnpj(masked);
+    if (masked.trim() && !isValidCNPJ(masked)) {
+      setCnpjError("CNPJ inválido (Dígitos verificadores incorretos)");
+    } else {
+      setCnpjError("");
+    }
   };
 
   return (
@@ -56,10 +75,18 @@ export default function TabCompetitors({
           <input
             type="text"
             placeholder="21.394.029/0001-99"
-            className="w-full text-xs bg-white border border-gray-200 rounded p-2 outline-none text-slate-850"
+            className={`w-full text-xs bg-white border rounded p-2 outline-none text-slate-850 ${
+              cnpjError ? "border-red-400 focus:ring-1 focus:ring-red-400" : "border-gray-200"
+            }`}
             value={compCnpj}
-            onChange={(e) => setCompCnpj(e.target.value)}
+            onChange={(e) => handleCnpjChange(e.target.value)}
           />
+          {cnpjError && (
+            <p className="text-[9px] text-red-500 mt-1 font-semibold flex items-center gap-1">
+              <AlertTriangle className="w-2.5 h-2.5" />
+              {cnpjError}
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Lance Apresentado / Histórico (R$)</label>

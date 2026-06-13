@@ -14,7 +14,7 @@ interface GeneralSuppliersProps {
 
 export default function GeneralSuppliers({ licitacoes, onOpenLicitacao }: GeneralSuppliersProps) {
   const [suppliersList, setSuppliersList] = useState<typeof MOCK_CATALOG_SUPPLIERS>(() => {
-    const saved = localStorage.getItem("licitacoes_general_suppliers");
+    const saved = localStorage.getItem("LICI_TRACK_V1_general_suppliers");
     if (saved) {
       try { return JSON.parse(saved); } catch (_) {}
     }
@@ -36,7 +36,7 @@ export default function GeneralSuppliers({ licitacoes, onOpenLicitacao }: Genera
   const [newCategory, setNewCategory] = useState("Geral");
 
   useEffect(() => {
-    localStorage.setItem("licitacoes_general_suppliers", JSON.stringify(suppliersList));
+    localStorage.setItem("LICI_TRACK_V1_general_suppliers", JSON.stringify(suppliersList));
   }, [suppliersList]);
 
   // Handle value formatting

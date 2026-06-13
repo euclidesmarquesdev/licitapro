@@ -11,7 +11,7 @@ import LicitacaoCard from "./components/LicitacaoCard";
 import LicitacaoDetails from "./components/LicitacaoDetails";
 import AlertsManager from "./components/AlertsManager";
 import GeneralSuppliers from "./components/GeneralSuppliers";
-import { parsePncpClipboardText } from "./utils/pncpParser";
+import { parsePncpClipboardText, parseBrazilianDateToISO } from "./utils/pncpParser";
 
 // Firebase imports
 import { auth, db, googleProvider, signInWithPopup, signOut } from "./firebase";
@@ -143,7 +143,7 @@ export default function App() {
 
   // Loading settings from localStorage if exist
   useEffect(() => {
-    const saved = localStorage.getItem("licitacoes_company_settings");
+    const saved = localStorage.getItem("LICI_TRACK_V1_company_settings");
     if (saved) {
       try { setCompanySettings(JSON.parse(saved)); } catch (_) {}
     }
@@ -158,7 +158,7 @@ export default function App() {
         setUser(currentUser);
         setIsGuestMode(false);
       } else {
-        const savedVirtual = localStorage.getItem("licitacoes_virtual_user");
+        const savedVirtual = localStorage.getItem("LICI_TRACK_V1_virtual_user");
         if (savedVirtual) {
           try {
             setUser(JSON.parse(savedVirtual));
@@ -180,7 +180,7 @@ export default function App() {
     if (authLoading) return;
 
     if (isGuestMode || (user && user.isVirtual)) {
-      const storageKey = user ? `licitacoes_data_${user.uid}` : "licitacoes_guest_data";
+      const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         try {
@@ -229,7 +229,7 @@ export default function App() {
     setLicitacoes(prev => {
       const newList = prev.map(item => item.id === updated.id ? updated : item);
       if (isGuestMode || (user && user.isVirtual)) {
-        const storageKey = user ? `licitacoes_data_${user.uid}` : "licitacoes_guest_data";
+        const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
         localStorage.setItem(storageKey, JSON.stringify(newList));
       }
       return newList;
@@ -451,23 +451,7 @@ export default function App() {
     });
 
     // Support formatting Brazilian date (DD/MM/YYYY HH:mm) or using standard Date
-    let parsedSessionDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16);
-    if (newFimPropostas) {
-      if (newFimPropostas.includes("/")) {
-        // "17/06/2026 16:30"
-        const dParts = newFimPropostas.split(" ");
-        const dateParts = dParts[0].split("/");
-        if (dateParts.length === 3) {
-          const hoursStr = dParts[1] || "09:00";
-          const dObj = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}T${hoursStr}`);
-          if (!isNaN(dObj.getTime())) {
-            parsedSessionDate = dObj.toISOString().substring(0, 16);
-          }
-        }
-      } else {
-        parsedSessionDate = newFimPropostas;
-      }
-    }
+    const parsedSessionDate = parseBrazilianDateToISO(newFimPropostas);
 
     const newItem: Licitacao = {
       id: newId,
@@ -512,7 +496,7 @@ export default function App() {
     setLicitacoes(updatedList);
 
     if (isGuestMode || (user && user.isVirtual)) {
-      const storageKey = user ? `licitacoes_data_${user.uid}` : "licitacoes_guest_data";
+      const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
       localStorage.setItem(storageKey, JSON.stringify(updatedList));
     } else if (user) {
       try {
@@ -550,7 +534,7 @@ export default function App() {
     setLicitacoes(updatedList);
 
     if (isGuestMode || (user && user.isVirtual)) {
-      const storageKey = user ? `licitacoes_data_${user.uid}` : "licitacoes_guest_data";
+      const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
       localStorage.setItem(storageKey, JSON.stringify(updatedList));
       if (selectedLicitacaoId === id) setSelectedLicitacaoId(null);
     } else {
@@ -608,7 +592,7 @@ export default function App() {
 
   const handleUpdateCompanySettings = (settings: CompanySetting) => {
     setCompanySettings(settings);
-    localStorage.setItem("licitacoes_company_settings", JSON.stringify(settings));
+    localStorage.setItem("LICI_TRACK_V1_company_settings", JSON.stringify(settings));
   };
 
   const handleGoogleLogin = async () => {
@@ -625,7 +609,7 @@ export default function App() {
         photoURL: null,
         isVirtual: true
       };
-      localStorage.setItem("licitacoes_virtual_user", JSON.stringify(virtualUser));
+      localStorage.setItem("LICI_TRACK_V1_virtual_user", JSON.stringify(virtualUser));
       setUser(virtualUser);
       setIsGuestMode(false);
     } finally {
@@ -634,7 +618,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    localStorage.removeItem("licitacoes_virtual_user");
+    localStorage.removeItem("LICI_TRACK_V1_virtual_user");
     if (isGuestMode || (user && user.isVirtual)) {
       setIsGuestMode(false);
       setUser(null);

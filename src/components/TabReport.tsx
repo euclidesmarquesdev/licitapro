@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { CompanySetting } from "../types";
 import { Settings, Sparkles, RefreshCw, Check, Copy, Printer, FileCheck } from "lucide-react";
+import { formatCNPJ, formatCPF, isValidCNPJ, isValidCPF } from "../utils/validation";
 
 interface TabProps {
   companySettings: CompanySetting;
@@ -19,6 +20,29 @@ export default function TabReport({
   const [docContentResult, setDocContentResult] = useState("");
   const [docTitleResult, setDocTitleResult] = useState("");
   const [copied, setCopied] = useState(false);
+  
+  const [cnpjError, setCnpjError] = useState("");
+  const [cpfError, setCpfError] = useState("");
+
+  const handleCnpjChange = (val: string) => {
+    const masked = formatCNPJ(val);
+    onUpdateCompanySettings({ ...companySettings, cnpj: masked });
+    if (masked.trim() && !isValidCNPJ(masked)) {
+      setCnpjError("CNPJ inválido");
+    } else {
+      setCnpjError("");
+    }
+  };
+
+  const handleCpfChange = (val: string) => {
+    const masked = formatCPF(val);
+    onUpdateCompanySettings({ ...companySettings, partnerCPF: masked });
+    if (masked.trim() && !isValidCPF(masked)) {
+      setCpfError("CPF inválido");
+    } else {
+      setCpfError("");
+    }
+  };
 
   const handleCopy = () => {
     if (!docContentResult) return;
@@ -62,10 +86,14 @@ export default function TabReport({
             <label className="block text-[10px] font-bold text-gray-500 mb-1">CNPJ</label>
             <input
               type="text"
-              className="w-full text-xs border border-gray-200 bg-white p-2 rounded text-slate-800"
+              className={`w-full text-xs border bg-white p-2 rounded text-slate-800 ${
+                cnpjError ? "border-red-400 focus:ring-1 focus:ring-red-450" : "border-gray-200"
+              }`}
+              placeholder="00.000.000/0001-00"
               value={companySettings.cnpj || ""}
-              onChange={(e) => onUpdateCompanySettings({ ...companySettings, cnpj: e.target.value })}
+              onChange={(e) => handleCnpjChange(e.target.value)}
             />
+            {cnpjError && <p className="text-[9px] text-red-500 mt-0.5 font-bold">{cnpjError}</p>}
           </div>
           <div>
             <label className="block text-[10px] font-bold text-gray-500 mb-1">Endereço Completo</label>
@@ -89,10 +117,14 @@ export default function TabReport({
             <label className="block text-[10px] font-bold text-gray-500 mb-1">CPF Representante</label>
             <input
               type="text"
-              className="w-full text-xs border border-gray-200 bg-white p-2 rounded text-slate-800"
+              className={`w-full text-xs border bg-white p-2 rounded text-slate-800 ${
+                cpfError ? "border-red-400 focus:ring-1 focus:ring-red-450" : "border-gray-200"
+              }`}
+              placeholder="000.000.000-00"
               value={companySettings.partnerCPF || ""}
-              onChange={(e) => onUpdateCompanySettings({ ...companySettings, partnerCPF: e.target.value })}
+              onChange={(e) => handleCpfChange(e.target.value)}
             />
+            {cpfError && <p className="text-[9px] text-red-500 mt-0.5 font-bold">{cpfError}</p>}
           </div>
           <div>
             <label className="block text-[10px] font-bold text-gray-500 mb-1">Cargo/Função</label>

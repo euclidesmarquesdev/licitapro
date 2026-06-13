@@ -8,6 +8,7 @@ interface ConfettiCelebrationProps {
   type: "items" | "docs" | null;
   orgao?: string;
   edital?: string;
+  triggerMessage?: string;
 }
 
 // Color palette: purple (indigo/violet), blue, emerald green
@@ -36,7 +37,8 @@ export default function ConfettiCelebration({
   onClose,
   type,
   orgao = "Órgão Público",
-  edital = "Pregão Eletrônico"
+  edital = "Pregão Eletrônico",
+  triggerMessage
 }: ConfettiCelebrationProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [active, setActive] = useState(false);
@@ -209,6 +211,11 @@ export default function ConfettiCelebration({
             </div>
 
             <div className="border-t border-slate-200/55 pt-3.5">
+              {triggerMessage && (
+                <div className="mb-3 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold font-sans text-center shadow-2xs">
+                  🎯 Inspiração: {triggerMessage}
+                </div>
+              )}
               {type === "items" ? (
                 <p className="text-xs text-slate-600 leading-relaxed font-medium">
                   Excelente progresso corporativo! Todos os itens e fornecedores vinculados no edital foram <strong className="text-indigo-600 font-extrabold bg-indigo-50/70 p-0.5 px-1.5 rounded">marcardos como cotados</strong>. Suas estimativas estão finalizadas e alinhadas para a inserção das propostas comerciais!
