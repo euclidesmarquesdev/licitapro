@@ -1,0 +1,111 @@
+// Prisma Schema file for LicitaPro PostgreSQL Transition
+// Target database: PostgreSQL (Neon / Supabase / GCP Cloud SQL)
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Modalidade {
+  PREGAO_ELETRONICO
+  PREGAO_PRESENCIAL
+  CONCORRENCIA
+  TOMADA_DE_PRECOS
+  INEXIGIBILIDADE
+  DISPENSA
+  DIALOGO_COMPETITIVO
+  LEILAO
+}
+
+enum CategoriaLicitacao {
+  TECNOLOGIA_DA_INFORMACAO
+  OBRAS_ENGENHARIA
+  SERVICOS_GERAIS
+  MATERIAIS_EQUIPAMENTOS
+  CONSULTORIA
+  SAUDE_MEDICAMENTOS
+  ALIMENTACAO_MERENDA
+  OUTROS
+}
+
+model User {
+  id               String           @id @default(uuid())
+  uid              String           @unique // Firebase Auth linked UUID
+  email            String           @unique
+  name             String?
+  tenantId         String           @default("default_tenant")
+  
+  // Compliance and LGPD controls
+  lgpdConsented    Boolean          @default(false)
+  consentedAt      DateTime?
+  marketingAllowed Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  savedDocuments   SavedDocument[]
+  biddingSearches  BiddingSearch[]
+}
+
+model Licitacao {
+  id                   String             @id @default(uuid())
+  edital               String
+  orgao                String
+  modalidade           Modalidade         @default(PREGAO_ELETRONICO)
+  objeto               String             @db.Text
+  valorEstimado        Decimal            @db.Decimal(15, 2)
+  dataSessao           DateTime
+  cidade               String
+  estado               String             @db.VarChar(2)
+  categoria            CategoriaLicitacao @default(OUTROS)
+  
+  // Store structured JSON content (Checklists & Files lists to support multiple details)
+  checklistRecomendado Json               // Array string representation
+  arquivosPncp         Json               // Array objects representing files
+  competitorsEstimated Json?              // Array string prediction
+  
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  savedDocuments       SavedDocument[]
+}
+
+model SavedDocument {
+  id          String    @id @default(uuid())
+  userId      String
+  licitacaoId String?
+  docType     String    // e.g. "Declaração de Superveniência"
+  title       String
+  content     String    @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licitacao   Licitacao? @relation(fields: [licitacaoId], references: [id], onDelete: SetNull)
+}
+
+model BiddingSearch {
+  id          String   @id @default(uuid())
+  userId      String
+  searchTerm  String?
+  searchUrl   String?
+  timestamp   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PostgresAuditLog {
+  id                String   @id @default(uuid())
+  userId            String
+  timestamp         DateTime @default(now())
+  endpoint          String
+  payload           String   @db.Text
+  response          String   @db.Text
+  isMock            Boolean  @default(false)
+  signature         String   @unique  // Cryptographic hash block link
+  previousSignature String
+
+  @@index([userId])
+}

@@ -1,0 +1,50 @@
+name: "LicitaPro CI-CD Pipeline"
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository Code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js 20 Environment
+      uses: actions/setup-node@v4
+      with:
+        node-mode: '20'
+        cache: 'npm'
+
+    - name: Install Project Dependencies
+      run: npm ci
+
+    - name: Run TypeScript Syntax Verification (Linter)
+      run: npm run lint
+
+    - name: Run Modular Technical Unit Tests
+      run: npm test
+
+    - name: Run Production Bundle Build Verification
+      run: npm run build
+
+  docker-dry-run:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository Code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Production Image Dry-Run (No Deploy)
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: Dockerfile
+        push: false
