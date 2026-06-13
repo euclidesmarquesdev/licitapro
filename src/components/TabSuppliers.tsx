@@ -41,6 +41,7 @@ export default function TabSuppliers({
   const [supContact, setSupContact] = useState("");
 
   const [showAllCatalog, setShowAllCatalog] = useState(false);
+  const [limitToTop3, setLimitToTop3] = useState(true);
 
   // Local state for catalog search and pagination
   const [catalogSearch, setCatalogSearch] = useState("");
@@ -121,9 +122,13 @@ export default function TabSuppliers({
     );
   });
 
-  const totalCatalogPages = Math.ceil(filteredCatalogSups.length / catalogItemsPerPage);
+  const finalCatalogSups = (limitToTop3 && !showAllCatalog && !catalogSearch.trim())
+    ? filteredCatalogSups.slice(0, 3)
+    : filteredCatalogSups;
+
+  const totalCatalogPages = Math.ceil(finalCatalogSups.length / catalogItemsPerPage);
   const safeCatalogPage = Math.min(catalogPage, Math.max(1, totalCatalogPages));
-  const paginatedCatalogSups = filteredCatalogSups.slice(
+  const paginatedCatalogSups = finalCatalogSups.slice(
     (safeCatalogPage - 1) * catalogItemsPerPage,
     safeCatalogPage * catalogItemsPerPage
   );
@@ -262,6 +267,18 @@ export default function TabSuppliers({
               >
                 {showAllCatalog ? "Ver Compatíveis" : "Ver Catálogo Completo"}
               </button>
+              {!showAllCatalog && compSups.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLimitToTop3(!limitToTop3);
+                    setCatalogPage(1);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-[10.5px] font-bold shadow-2xs transition duration-150 cursor-pointer"
+                >
+                  {limitToTop3 ? `Sugestões: Mostrar Todos (${compSups.length})` : "Sugerir Apenas Top 3"}
+                </button>
+              )}
             </div>
           </div>
 
@@ -643,15 +660,36 @@ export default function TabSuppliers({
 
                   {/* Sum columns for each supplier */}
                   {activeSuppliers.map(sup => {
+                    const totalRef = (licitacao.itensPncp || []).reduce((acc, curr) => acc + (curr.valorTotal || (curr.quantidade * curr.valorUnitario) || 0), 0);
                     const totalVal = (licitacao.itensPncp || []).reduce((acc, curr) => {
                       const p = sup.itemPrices?.[curr.numero] || 0;
                       return acc + (p * (curr.quantidade || 1));
                     }, 0);
+                    const discountPercentage = totalRef > 0 && totalVal > 0 ? ((totalRef - totalVal) / totalRef) * 100 : 0;
 
                     return (
                       <td key={sup.id} className="p-4 text-center border-l border-slate-300 bg-slate-50">
                         <div className="text-[10px] text-slate-600 font-black uppercase">TOTAL COTADO:</div>
                         <div className="text-sm font-mono text-indigo-700 mt-0.5">{formatCurrency(totalVal)}</div>
+                        
+                        {totalRef > 0 && totalVal > 0 && (
+                          <div className="mt-2.5 pt-2 border-t border-slate-200 text-[10px] flex flex-col items-center justify-center">
+                            <span className="text-slate-450 text-[9px] uppercase font-bold tracking-wide">Desconto vs. Gov:</span>
+                            {discountPercentage > 0 ? (
+                              <span className="font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1 border border-emerald-100">
+                                {discountPercentage.toFixed(1)}% abaixo
+                              </span>
+                            ) : discountPercentage < 0 ? (
+                              <span className="font-extrabold text-red-600 bg-red-50 px-2 py-0.5 rounded-full mt-1 border border-red-100">
+                                {Math.abs(discountPercentage).toFixed(1)}% acima
+                              </span>
+                            ) : (
+                              <span className="font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 border border-slate-200">
+                                0.0% (Igual)
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                     );
                   })}
@@ -772,10 +810,22 @@ export default function TabSuppliers({
                     </div>
                   </div>
 
-                  {discountPercentage > 0 && (
-                    <div className="mt-2.5 flex items-center gap-1 text-[11px] font-bold text-emerald-600">
-                      <span>Margem de Desconto vs. Gov:</span>
-                      <strong className="font-black bg-emerald-50 px-1.5 py-0.5 rounded">{discountPercentage.toFixed(1)}% abaixo do teto</strong>
+                  {totalVal > 0 && (
+                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-bold">
+                      <span className="text-slate-500">Margem de Desconto vs. Gov:</span>
+                      {discountPercentage > 0 ? (
+                        <strong className="font-black bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded">
+                          {discountPercentage.toFixed(1)}% abaixo do teto
+                        </strong>
+                      ) : discountPercentage < 0 ? (
+                        <strong className="font-black bg-red-50 text-red-600 px-1.5 py-0.5 rounded">
+                          {Math.abs(discountPercentage).toFixed(1)}% acima do teto
+                        </strong>
+                      ) : (
+                        <strong className="font-black bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                          0.0% (Igual ao teto)
+                        </strong>
+                      )}
                     </div>
                   )}
 

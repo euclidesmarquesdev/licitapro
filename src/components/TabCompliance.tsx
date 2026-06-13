@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Licitacao, SupplierContact } from "../types";
 import { 
-  ShieldCheck, Scale, Info, Calculator, AlertTriangle 
+  ShieldCheck, Scale, Info, Calculator, AlertTriangle, RefreshCw, Database 
 } from "lucide-react";
 
 interface TabProps {
@@ -10,6 +10,16 @@ interface TabProps {
   valorEstimado: number;
   formatCurrency: (val: number) => string;
   activeQuoteSum: number;
+}
+
+interface AIAuditLog {
+  id: string;
+  timestamp: string;
+  endpoint: string;
+  payload: any;
+  response: any;
+  isMock: boolean;
+  signature: string;
 }
 
 export default function TabCompliance({
@@ -24,6 +34,41 @@ export default function TabCompliance({
   const [simModalidade, setSimModalidade] = useState<"pregao" | "concorrencia font-sans">("pregao");
   const [simLeaderBidText, setSimLeaderBidText] = useState("");
   const [simOurBidText, setSimOurBidText] = useState("");
+
+  const [auditLogs, setAuditLogs] = useState<AIAuditLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
+  const fetchAuditLogs = async () => {
+    try {
+      setLogsLoading(true);
+      const res = await fetch("/api/ia/audit/history");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.logs) {
+          setAuditLogs(data.logs);
+        }
+      }
+    } catch (err) {
+      console.warn("Falha ao obter logs de auditoria de IA:", err);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAuditLogs();
+  }, [licitacao.id]);
+
+  const downloadLogsAsJson = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(auditLogs, null, 2));
+    const downloadAnchor = document.createElement("a");
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `licitapro-ia-audit-logs-${licitacao.id || "geral"}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
 
   const modalidadeSim = simModalidade.includes("pregao") ? "pregao" : "concorrencia";
 
@@ -468,19 +513,118 @@ export default function TabCompliance({
                 <p className="text-slate-350 text-[10px] mt-0.5 leading-relaxed font-normal font-sans">Dispõe sobre o ETP na fase interna da contratação pública, que justifica essencialmente a viabilidade técnica e socioeconômica da demanda.</p>
               </div>
 
-              <div>
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span className="text-[9px] bg-slate-700 text-teal-300 font-extrabold px-1.5 py-0.5 rounded uppercase">IN 81/2022</span>
-                </div>
-                <strong className="text-slate-150 block mt-1 font-sans font-semibold">Termo de Referência (TR)</strong>
-                <p className="text-slate-350 text-[10px] mt-0.5 leading-relaxed font-normal font-sans">Regulamenta os estudos do TR na fase pré-editalícia, contendo detalhamento técnico e de SLA rigorosos, mitigando impugnações.</p>
               </div>
             </div>
+          </div>
+
+          {/* AI TRANSACTIONS AUDITING PLATFORM (NÍVEL PREMIUM SAAS VENDÁVEL) */}
+          <div className="col-span-1 lg:col-span-3 mt-6 bg-slate-900 border border-slate-800 text-white rounded-2xl p-6 shadow-sm font-sans">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-4">
+              <div>
+                <h4 className="text-sm font-black text-emerald-400 uppercase tracking-widest flex items-center gap-2">
+                  <Database className="w-5 h-5 text-emerald-400" />
+                  Rastreabilidade IA: Livro de Auditoria de Algoritmos (Lei 14.133)
+                </h4>
+                <p className="text-slate-400 text-xs mt-1">
+                  Registro criptografado de todas as transações consultivas efetuadas pelo LicitaPro Premium para fins de governança e defesas jurídicas.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  id="btn-refresh-audit-logs"
+                  onClick={fetchAuditLogs}
+                  disabled={logsLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 active:bg-slate-755 text-slate-100 rounded-lg transition-colors border border-slate-700 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${logsLoading ? "animate-spin" : ""}`} />
+                  {logsLoading ? "Sincronizando..." : "Atualizar logs"}
+                </button>
+                <button
+                  type="button"
+                  id="btn-download-audit-logs"
+                  onClick={downloadLogsAsJson}
+                  disabled={auditLogs.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-750 text-white rounded-lg transition-colors disabled:opacity-40"
+                >
+                  Exportar Livro (.JSON)
+                </button>
+              </div>
+            </div>
+
+            {auditLogs.length === 0 ? (
+              <div className="py-8 text-center text-slate-500 text-xs">
+                Nenhum log de IA registrado nesta sessão de trabalho. Execute o Scraper de Editais ou a Análise Preditiva para gerar registros biométricos de auditoria técnica.
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {auditLogs.map((log) => {
+                  const isExpanded = expandedLogId === log.id;
+                  return (
+                    <div 
+                      key={log.id} 
+                      className="bg-slate-950/80 rounded-xl border border-slate-800 hover:border-slate-700 p-4 transition-colors font-sans"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[9px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-900/65 font-bold">
+                            COMPLIANT
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-200 font-bold">
+                            {log.endpoint}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            • {new Date(log.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[9px] text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">
+                            {log.isMock ? "Simulação de Resposta" : "Gemini Pro Active"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                            className="text-[10px] text-emerald-400 hover:underline font-bold"
+                          >
+                            {isExpanded ? "Ocultar Estrutura [-]" : "Visualizar Payload [+]"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col md:flex-row justify-between text-[10px] text-slate-400 mt-2 gap-1 font-mono">
+                        <div>
+                          <strong>ID:</strong> <span className="text-slate-300">{log.id}</span>
+                        </div>
+                        <div>
+                          <strong>Assinatura Criptográfica:</strong> <span className="text-amber-400 font-extrabold">{log.signature}</span>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="mt-4 bg-slate-900 p-3 rounded-lg border border-slate-800 text-[10px] space-y-3 font-mono text-slate-300 max-h-64 overflow-y-auto">
+                          <div>
+                            <span className="text-emerald-400 font-bold block mb-1 uppercase tracking-wider text-[9px]">Enviado ao Motor de Linguagem (Payload):</span>
+                            <pre className="bg-slate-950 p-2 rounded text-slate-300 whitespace-pre-wrap select-all max-h-36 overflow-y-auto">
+                              {JSON.stringify(log.payload, null, 2)}
+                            </pre>
+                          </div>
+                          <div>
+                            <span className="text-sky-400 font-bold block mb-1 uppercase tracking-wider text-[9px]">Gabarito Retornado + Disclaimer de Amparo Legal:</span>
+                            <pre className="bg-slate-950 p-2 rounded text-slate-200 whitespace-pre-wrap select-all max-h-36 overflow-y-auto">
+                              {JSON.stringify(log.response, null, 2)}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
         </div>
 
       </div>
-    </div>
   );
 }

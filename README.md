@@ -25,10 +25,16 @@ O sistema é dividido em módulos analíticos táticos, consolidados sob uma int
 *   **Estratégias de Lances & Margens**: Gera sugestões automatizadas de lances ideais de entrada, taxa de desconto ideal consolidada e teto de lances robôs.
 *   **Identificação de Riscos de Desclassificação**: Antecipa riscos técnicos e gargalos jurídicos ocultos ou exigências complexas no edital para evitar perdas de sessão.
 
-### 3. ⚖️ Compliance Legal & Regulatório (Lei 14.133/21)
+### 3. ⚖️ Compliance Legal, Auditoria de IA & Termos Gerais (Lei 14.133/21)
+*   **Controle de Termos de Uso e Isenção de IA**: Tela de entrada equipada com consentimento legal explícito (Lei 14.133/2021 e Decreto nº 11.243/2022), obrigando o analista a declarar ciência de que as estimativas, checklists, prazos e minutas possuem caráter consultivo e de apoio estratégico, exigindo sempre a validação pelo jurídico competente.
+*   **Livro de Auditoria de Algoritmos & Rastreabilidade de IA**: Plataforma de registro integrada para governança ativa de dados. Cada análise executada pelos motores de IA gera um registro imutável contendo:
+    *   *Assinatura Criptográfica* única (`sha256`);
+    *   *Payload* estruturado de envio e resposta detalhada;
+    *   *Timestamp* preciso e origem da transação.
+*   **Exportação do Livro de Auditoria**: Interface integrada para auditoria que permite baixar o histórico criptografado consolidade em formato `.JSON` para fins de compliance e defesas administrativas.
 *   **Simulador de Empate Ficto (LC 123/2006)**: Aplica cálculos automatizados sobre lances concorrentes para identificar se a empresa (caso seja ME ou EPP) está apta a invocar o direito de desempate de 5% (Pregão) ou 10% (Concorrência), instruindo quais lances de desempate lançar no portal.
 *   **Auditoria de Coerência de Preços (IN 65/2021)**: Realiza análises de dispersão estatística de propostas comerciais e cotações ativas. Calcula a **Média Aritmética**, **Mediana de Mercado**, **Desvio Padrão (σ)** e o crucial **Coeficiente de Variação (CV)** para alertar sobre disparates de preços superiores a 25% (*outliers*).
-*   **Validador de Enquadramento Directo (IN 67/21)**: Avalia o valor de referência do edital sob os limiares atuais de Dispensa por Valor (limites federais vigentes para Compras/Serviços e Obras de Engenharia), determinando a viabilidade de contratação direta.
+*   **Validador de Enquadramento Direto (IN 67/21)**: Avalia o valor de referência do edital sob os limiares atuais de Dispensa por Valor (limites federais vigentes para Compras/Serviços e Obras de Engenharia), determinando a viabilidade de contratação direta.
 
 ### 4. 📃 Gerador de Documentos de Sessão
 *   **Minutas Prontas em Segundos**: Integra os dados cadastrais da instituição e as regras do edital para redigir instantaneamente:
@@ -40,8 +46,10 @@ O sistema é dividido em módulos analíticos táticos, consolidados sob uma int
     *   *Termo de Referência (TR - IN 81/2022)*
 *   **Exportação Rápida**: Área de pré-visualização configurada com suporte de cópia rápida em um clique para a Área de Transferência e utilitário nativo de impressão direta em papel ou PDF.
 
-### 5. 📦 Catálogo de Fornecedores & Amostragem Tri-setorial
-*   **Integração Persistente com localStorage**: Banco geral global integrado para salvar fornecedores parceiros recorrentes.
+### 5. 📦 Catálogo de Fornecedores, Margens Completas & Tri-setorial
+*   **Margem de Desconto Completa vs. Gov (Visão de Análise de Preços)**: Diferente de sistemas comuns que mostram apenas a margem do líder, o LicitaPro exibe a margem de desconto exata de **todos** os fornecedores cadastrados e com preços ativos na grade comparativa. O analista visualiza instantaneamente quem está abaixo (`% abaixo do preço teto`), acima (`% acima`) ou igual ao teto oficial do certame governamental para rápidas decisões de negociação.
+*   **Limitador e Filtro Inteligente de Visualização**: Opção integrada de selecionar os "Top 3 Fornecedores com Melhor Desconto" ou alternar para o "Catálogo Completo de Fornecedores", viabilizando legibilidade total mesmo em editais complexos com dezenas de cotações concorrentes.
+*   **Integração Persistente com localStorage**: Banco geral global integrado para salvar fornecedores parceiros de suprimentos recorrentes.
 *   **Casamento Inteligente de Portfólio**: Algoritmo de mapeamento por palavras-chave relevantes conecta automaticamente itens do edital extraídos do PNCP com os produtos e descontos oferecidos pelos parceiros compatíveis no catálogo.
 
 ### 6. 🔔 Central de Alertas Inteligente (Gestão de Prazos)
@@ -176,6 +184,37 @@ Gera modelos oficiais de documentos e certidões jurídicas para o certame nos m
       "ourCompanyDetails": { "name": "Razão Social", "cnpj": "..." }
     }
     ```
+
+### `GET /api/ia/audit/history`
+Retorna as transações executadas pelos algoritmos de IA sob análise securitária para compliance técnico e auditorias.
+*   **Formato de Resposta (JSON):**
+    ```json
+    {
+      "success": true,
+      "logs": [
+        {
+          "id": "ia-log-1718223650-6a9b",
+          "timestamp": "2026-06-13T02:15:00.000Z",
+          "endpoint": "/api/licitacoes/predict",
+          "payload": {},
+          "response": {},
+          "isMock": false,
+          "signature": "sha256-sig-A9D4E2F7C..."
+        }
+      ]
+    }
+    ```
+
+---
+
+## 🔒 Proteção da Infraestrutura & Segurança (Security Shield)
+
+Para assegurar estabilidade corporativa e em conformidade com as melhores práticas de governança:
+*   **Rate Limiting Ativo**: Camada de proteção de API integrada no Express que restringe o abuso de scraping e sobrecarga por requisições simultâneas. Limite calibrado para no máximo **40 requisições por minuto por IP**, respondendo com `Status 429` e mensagem personalizada em caso de excesso.
+*   **Blindagem de Cabeçalhos HTTP**: Configuração preventiva de segurança de rede:
+    *   `X-Content-Type-Options: nosniff` (Prevenção de MIME-sniffing);
+    *   `X-Frame-Options: SAMEORIGIN` (Mitigação de clickjacking);
+    *   `X-XSS-Protection: 1; mode=block` (Proteção contra injeções XSS refletidas).
 
 ---
 

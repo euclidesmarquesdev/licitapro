@@ -80,6 +80,8 @@ export default function App() {
   const [user, setUser] = useState<any | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isGuestMode, setIsGuestMode] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsError, setTermsError] = useState("");
 
   // Core biddings list
   const [licitacoes, setLicitacoes] = useState<Licitacao[]>([]);
@@ -596,6 +598,10 @@ export default function App() {
   };
 
   const handleGoogleLogin = async () => {
+    if (!termsAccepted) {
+      setTermsError("Por favor, leia e marque o aceite dos termos legais de IA e termos de uso antes de prosseguir.");
+      return;
+    }
     try {
       setAuthLoading(true);
       await signInWithPopup(auth, googleProvider);
@@ -691,8 +697,33 @@ export default function App() {
             Cadastre os editais copiando links ou arrastando textos. Nossa IA preenche tudo, cria o checklist, gerencia faturamento com fornecedores de apoio, monitora alertas via <strong className="text-emerald-400">WhatsApp/E-mail</strong> e faz <strong className="text-blue-400">análise preditiva</strong> de lances.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10">
+          {/* Termos de Compromisso Legal e Regras de IA */}
+          <div className="max-w-xl mx-auto mt-8 p-3.5 bg-slate-900/60 border border-slate-800 rounded-xl text-left font-sans">
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                id="terms-accepted-checkbox"
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => {
+                  setTermsAccepted(e.target.checked);
+                  if (e.target.checked) setTermsError("");
+                }}
+                className="mt-1 w-4 h-4 bg-slate-800 border-slate-700 rounded text-blue-500 focus:ring-blue-500 focus:ring-offset-slate-900 focus:ring-2 cursor-pointer"
+              />
+              <span className="text-[11px] text-slate-400 leading-normal">
+                Declaro ter lido e aceito as condições dos <strong className="text-slate-200">Termos de Uso e Isenção de IA</strong> (Lei 14.133/2021 e Decreto nº 11.243/2022). Reconheço que as sugestões de lances, checklists baseados em editais, minutas e prazos fornecidos no LicitaPro possuem caráter consultivo e devem ser validados pela assessoria jurídica competente.
+              </span>
+            </label>
+            {termsError && (
+              <p className="text-red-400 text-[10px] font-bold mt-2 animate-pulse text-center">
+                ⚠️ {termsError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8">
             <button
+              id="google-login-btn"
               onClick={handleGoogleLogin}
               className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 text-sm transition tracking-wide flex items-center justify-center gap-2 cursor-pointer"
             >
@@ -700,7 +731,14 @@ export default function App() {
               Entrar com Conta Google
             </button>
             <button
-              onClick={() => setIsGuestMode(true)}
+              id="demo-login-btn"
+              onClick={() => {
+                if (!termsAccepted) {
+                  setTermsError("Por favor, leia e marque o aceite dos termos legais de IA e de uso antes de prosseguir com a demonstração.");
+                  return;
+                }
+                setIsGuestMode(true);
+              }}
               className="w-full sm:w-auto px-8 py-3.5 bg-white/10 hover:bg-white/15 text-white font-bold rounded-xl text-sm transition border border-white/10 flex items-center justify-center gap-2 cursor-pointer"
             >
               <Database className="w-4 h-4 text-emerald-400" />

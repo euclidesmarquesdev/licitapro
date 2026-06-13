@@ -18,11 +18,82 @@ const ai = new GoogleGenAI({
   }
 });
 
+// In-memory registry for AI transaction logs (Auditoria & Logging do plano PREMIUM)
+interface AIAuditLog {
+  id: string;
+  timestamp: string;
+  endpoint: string;
+  payload: any;
+  response: any;
+  isMock: boolean;
+  signature: string;
+}
+
+const aiAuditLogs: AIAuditLog[] = [];
+
+function addAuditLogEntry(endpoint: string, payload: any, response: any, isMock: boolean) {
+  const logEntry: AIAuditLog = {
+    id: "ia-log-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+    timestamp: new Date().toISOString(),
+    endpoint,
+    payload,
+    response,
+    isMock,
+    signature: "sha256-sig-" + Math.random().toString(36).substring(2, 10).toUpperCase()
+  };
+  aiAuditLogs.unshift(logEntry);
+  if (aiAuditLogs.length > 200) {
+    aiAuditLogs.pop();
+  }
+}
+
+// Simple in-memory rate limiter to protect the API routes against scraping/AI abuse (Rate Limiting + Segurança)
+const ipRequests = new Map<string, { count: number; resetTime: number }>();
+function rateLimiterMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = req.ip || (req.headers["x-forwarded-for"] as string) || "unknown-ip";
+  const now = Date.now();
+  const windowMs = 60 * 1000; // 1 minute
+  const maxRequests = 40; // Max 40 requests per IP per minute for LicitaPro Premium standard
+
+  const record = ipRequests.get(ip);
+  if (!record) {
+    ipRequests.set(ip, { count: 1, resetTime: now + windowMs });
+    return next();
+  }
+
+  if (now > record.resetTime) {
+    ipRequests.set(ip, { count: 1, resetTime: now + windowMs });
+    return next();
+  }
+
+  record.count += 1;
+  if (record.count > maxRequests) {
+    return res.status(429).json({
+      error: "LicitaPro Security Shield: Limite de requisições excedido. Limite: 40 requisições/min por endereço IP para prevenção de ataques DOS."
+    });
+  }
+  next();
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json({ limit: "15mb" }));
+  app.use(rateLimiterMiddleware);
+
+  // Security headers representation
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    next();
+  });
+
+  // API Audit route: Retrieve all logged prompt-response profiles
+  app.get("/api/ia/audit/history", (req, res) => {
+    res.json({ success: true, logs: aiAuditLogs });
+  });
 
   // API 1: Extract bidding metadata from URL or raw text using Gemini
   app.post("/api/licitacoes/scrape", async (req, res) => {
@@ -68,33 +139,36 @@ async function startServer() {
       // Check if API key is present
       if (!geminiKey) {
         // Fallback mockup in case API key is missing
+        const mockData = {
+          edital: "Pregão Eletrônico SRP 35/2026",
+          orgao: "Tribunal Regional Federal (TRF) - 3ª Região",
+          modalidade: "Pregão Eletrônico",
+          objeto: "Contratação de empresa especializada para modernização tecnológica, suporte de infraestrutura em nuvem, e fornecimento de hardware de alto desempenho.",
+          valorEstimado: 2450000.00,
+          dataSessao: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16),
+          cidade: "São Paulo",
+          estado: "SP",
+          categoria: "Tecnologia da Informação",
+          checklistRecomendado: [
+            "Certidão Conjunta Negativa de Débitos Federais",
+            "Balanço Patrimonial do último exercício social",
+            "Atestado de Capacidade Técnica operacional compatível",
+            "Certificado de Regularidade de Situação do FGTS (CRF)",
+            "Atestado de Vistoria ou Declaração de Conhecimento do Local",
+            "Declaração de cumprimento do Art. 7º, XXXIII da CF"
+          ],
+          competitorsEstimated: ["Softplan Planejamento", "Tech Solution Brasil Ltda", "GovTech Infra S.A."],
+          arquivosPncp: [
+            { id: "mock-doc-1", nome: "Edital_Concorrencia_35_2026.pdf", descricao: "Edital de Abertura Oficial", tamanho: "1.4 MB", linkUrl: "https://pncp.gov.br/app/editais?pagina=1" },
+            { id: "mock-doc-2", nome: "Projeto_Basico_Anexo_I.pdf", descricao: "Anexo Técnico e Requisitos", tamanho: "3.2 MB", linkUrl: "https://pncp.gov.br/app/editais?pagina=1" }
+          ],
+          disclaimer: "Aviso Legal - Lei 14.133/2021: Os dados cadastrais e checklists foram recuperados/gerados por inteligência artificial consultiva sob conformidade regulatória."
+        };
+        addAuditLogEntry("/api/licitacoes/scrape", { url, rawTextLength: textToAnalyze?.length || 0 }, { success: true, data: mockData }, true);
         return res.json({
           success: true,
           isMock: true,
-          data: {
-            edital: "Pregão Eletrônico SRP 35/2026",
-            orgao: "Tribunal Regional Federal (TRF) - 3ª Região",
-            modalidade: "Pregão Eletrônico",
-            objeto: "Contratação de empresa especializada para modernização tecnológica, suporte de infraestrutura em nuvem, e fornecimento de hardware de alto desempenho.",
-            valorEstimado: 2450000.00,
-            dataSessao: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16),
-            cidade: "São Paulo",
-            estado: "SP",
-            categoria: "Tecnologia da Informação",
-            checklistRecomendado: [
-              "Certidão Conjunta Negativa de Débitos Federais",
-              "Balanço Patrimonial do último exercício social",
-              "Atestado de Capacidade Técnica operacional compatível",
-              "Certificado de Regularidade de Situação do FGTS (CRF)",
-              "Atestado de Vistoria ou Declaração de Conhecimento do Local",
-              "Declaração de cumprimento do Art. 7º, XXXIII da CF"
-            ],
-            competitorsEstimated: ["Softplan Planejamento", "Tech Solution Brasil Ltda", "GovTech Infra S.A."],
-            arquivosPncp: [
-              { id: "mock-doc-1", nome: "Edital_Concorrencia_35_2026.pdf", descricao: "Edital de Abertura Oficial", tamanho: "1.4 MB", linkUrl: "https://pncp.gov.br/app/editais?pagina=1" },
-              { id: "mock-doc-2", nome: "Projeto_Basico_Anexo_I.pdf", descricao: "Anexo Técnico e Requisitos", tamanho: "3.2 MB", linkUrl: "https://pncp.gov.br/app/editais?pagina=1" }
-            ]
-          }
+          data: mockData
         });
       }
 
@@ -175,6 +249,8 @@ async function startServer() {
       }
 
       const parsedJSON = JSON.parse(resultText.trim());
+      parsedJSON.disclaimer = "Aviso Legal - Lei 14.133/2021: Os dados cadastrais e checklists foram obtidos através de análise semântica assistida por inteligência artificial.";
+      addAuditLogEntry("/api/licitacoes/scrape", { url, rawTextLength: textToAnalyze?.length || 0 }, { success: true, data: parsedJSON }, false);
       res.json({ success: true, data: parsedJSON });
 
     } catch (err: any) {
@@ -194,22 +270,24 @@ async function startServer() {
 
       if (!geminiKey) {
         // Fallback response for missing API key:
+        const mockPrediction = {
+          level: "MÉDIO-ALTO",
+          recommendedDiscount: "14.5% - 19.2%",
+          targetPrice: licitacao.valorEstimado ? (licitacao.valorEstimado * 0.83).toFixed(2) : "0.00",
+          winProbability: "68%",
+          competitorInsights: "As empresas fornecidas possuem grande atuação na região administrativa selecionada. Espera-se concorrência acirrada em lances eletrônicos. Recomenda-se focar na otimização de custos logísticos ou buscar isenção ICMS se aplicável.",
+          risks: [
+            "Vencimento iminente da CND Trabalhista durante o prazo estipulado.",
+            "Exigência de qualificação técnica com índice específico de liquidez corrente superior a 1.25.",
+            "Histórico de impugnações decorrentes de especificações restritivas no edital do órgão."
+          ],
+          strategy: "Entrar com proposta de abertura conservadora (ex: desconto de 5%) e programar lances automáticos (robô) calibrados com limite de margem líquida de 12%. Preparar as declarações de ME/EPP se enquadrado para usufruir da preferência de desempate."
+        };
+        addAuditLogEntry("/api/licitacoes/predict", { licitacaoId: licitacao.id }, { success: true, prediction: mockPrediction }, true);
         return res.json({
           success: true,
           isMock: true,
-          prediction: {
-            level: "MÉDIO-ALTO",
-            recommendedDiscount: "14.5% - 19.2%",
-            targetPrice: licitacao.valorEstimado ? (licitacao.valorEstimado * 0.83).toFixed(2) : "0.00",
-            winProbability: "68%",
-            competitorInsights: "As empresas fornecidas possuem grande atuação na região administrativa selecionada. Espera-se concorrência acirrada em lances eletrônicos. Recomenda-se focar na otimização de custos logísticos ou buscar isenção ICMS se aplicável.",
-            risks: [
-              "Vencimento iminente da CND Trabalhista durante o prazo estipulado.",
-              "Exigência de qualificação técnica com índice específico de liquidez corrente superior a 1.25.",
-              "Histórico de impugnações decorrentes de especificações restritivas no edital do órgão."
-            ],
-            strategy: "Entrar com proposta de abertura conservadora (ex: desconto de 5%) e programar lances automáticos (robô) calibrados com limite de margem líquida de 12%. Preparar as declarações de ME/EPP se enquadrado para usufruir da preferência de desempate."
-          }
+          prediction: mockPrediction
         });
       }
 
@@ -265,6 +343,7 @@ async function startServer() {
       });
 
       const parsedJSON = JSON.parse(response.text?.trim() || "{}");
+      addAuditLogEntry("/api/licitacoes/predict", { licitacaoId: licitacao.id }, { success: true, prediction: parsedJSON }, false);
       res.json({ success: true, prediction: parsedJSON });
 
     } catch (err: any) {
@@ -292,12 +371,14 @@ async function startServer() {
       };
 
       if (!geminiKey) {
-        return res.json({
+        const mockDoc = {
           success: true,
           isMock: true,
           documentTitle: `Declaração para ${licitacao.edital}`,
           content: `DECLARAÇÃO DE COMPLASCÊNCIA E REGULARIDADE\n\nAo Órgão: ${licitacao.orgao}\nEdital: ${licitacao.edital}\n\nA empresa ${companyDetails.name}, inscrita no CNPJ sob o nº ${companyDetails.cnpj}, sediada no endereço ${companyDetails.address}, por intermédio de seu representante legal, Sr(a). ${companyDetails.partnerName}, portador(a) do CPF nº ${companyDetails.partnerCPF}, declara para os devidos fins de habilitação e conformidade legal:\n\n1. Que cumprimos plenamente todos os requisitos vigentes exigidos na modalidade de ${licitacao.modalidade} referente ao objeto: "${licitacao.objeto}".\n2. Que nos termos do artigo 7º, inciso XXXIII, da Constituição Federal, não empregamos menores de dezoito anos em trabalho noturno, perigoso ou insalubre e nem menores de dezesseis anos em qualquer trabalho.\n3. Que inexiste fato superveniente impeditivo de nossa habilitação técnica ou jurídica.\n\nPor ser expressão da verdade, firmamos o presente termo.\n\n${licitacao.cidade || "Local"}, ${new Date().toLocaleDateString("pt-BR")}.\n\n_____________________________________________\n${companyDetails.partnerName}\n${companyDetails.partnerRole}`
-        });
+        };
+        addAuditLogEntry("/api/licitacoes/generate-document", { docType, companyCNPJ: companyDetails.cnpj }, mockDoc, true);
+        return res.json(mockDoc);
       }
 
       const prompt = `Gere uma declaração ou proposta oficial formalizada em língua portuguesa para participação em licitações públicas com base nos seguintes dados:
@@ -334,6 +415,7 @@ async function startServer() {
       });
 
       const parsedJSON = JSON.parse(response.text?.trim() || "{}");
+      addAuditLogEntry("/api/licitacoes/generate-document", { docType, companyCNPJ: companyDetails.cnpj }, { success: true, data: parsedJSON }, false);
       res.json({ success: true, data: parsedJSON });
 
     } catch (err: any) {
