@@ -27,12 +27,33 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "edital", "orgao", "modalidade", "status"]
+    },
+    "I_Audit_Log": {
+      "title": "I_Audit_Log",
+      "description": "Log de auditoria de transações realizadas com Inteligência Artificial para fins de governança e compliance.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "endpoint": { "type": "string" },
+        "signature": { "type": "string" },
+        "isMock": { "type": "boolean" },
+        "payloadStr": { "type": "string" },
+        "responseStr": { "type": "string" },
+        "citationsStr": { "type": "string" }
+      },
+      "required": ["id", "userId", "timestamp", "endpoint", "signature"]
     }
   },
   "firestore": {
     "/licitacoes/{licitacaoId}": {
       "schema": "Licitacao",
       "description": "Coleção principal de licitações cadastradas."
+    },
+    "/ia_audit_logs/{logId}": {
+      "schema": "I_Audit_Log",
+      "description": "Logs persistidos de auditoria e compliance de IA."
     }
   }
 }

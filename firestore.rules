@@ -43,5 +43,17 @@ service cloud.firestore {
         && existing().userId == request.auth.uid
         && incoming().userId == request.auth.uid;
     }
+
+    // Match section for IA Audit Logs collection
+    match /ia_audit_logs/{logId} {
+      allow create: if isSignedIn()
+        && isValidId(logId)
+        && incoming().userId == request.auth.uid;
+      
+      allow read: if isSignedIn()
+        && existing().userId == request.auth.uid;
+
+      allow update, delete: if false; // Audit logs are immutable for compliance!
+    }
   }
 }
