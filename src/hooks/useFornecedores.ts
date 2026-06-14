@@ -98,15 +98,14 @@ export function useFornecedores(
   };
 
   const getCompatibleSuppliers = () => {
-    const textPool = [
-      licitacao.objeto || "",
-      licitacao.edital || "",
-      licitacao.categoria || "",
-      ...(licitacao.itensPncp || []).map(item => item.descricao || "")
-    ].join(" ").toLowerCase();
+    const objetoText = (licitacao.objeto || "").toLowerCase();
 
     return MOCK_CATALOG_SUPPLIERS.filter(sup => {
-      return sup.categoryKeywords.some(keyword => textPool.includes(keyword));
+      const keywords = sup.categoryKeywords || [];
+      return keywords.some(keyword => {
+        const kw = keyword.toLowerCase().trim();
+        return kw && objetoText.includes(kw);
+      });
     });
   };
 

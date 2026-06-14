@@ -9,6 +9,7 @@ import BackupModal from "./components/BackupModal";
 import WelcomeScreen from "./components/WelcomeScreen";
 import AddLicitacaoModal from "./components/AddLicitacaoModal";
 import DeleteLicitacaoModal from "./components/DeleteLicitacaoModal";
+import RastreadorPncp from "./components/RastreadorPncp";
 
 import { useAuth } from "./hooks/useAuth";
 import { useLicitacoes } from "./hooks/useLicitacoes";
@@ -70,8 +71,21 @@ export default function App() {
     setSelectedLicitacaoId(null);
   };
 
-  // Main dashboard view control ("editais" | "fornecedores")
-  const [activeMainView, setActiveMainView] = useState<"editais" | "fornecedores">("editais");
+  // Main dashboard view control ("editais" | "fornecedores" | "rastreador")
+  const [activeMainView, setActiveMainView] = useState<"editais" | "fornecedores" | "rastreador">("rastreador");
+
+  // Lifted PNCP search tracker states to persist search results & filters on tab switches
+  const [pncpSearchTerm, setPncpSearchTerm] = useState("");
+  const [pncpSelectedUf, setPncpSelectedUf] = useState("Todos");
+  const [pncpSelectedModality, setPncpSelectedModality] = useState("6"); // Default 6 (Pregão Eletrônico)
+  const [pncpDateRange, setPncpDateRange] = useState("15"); // Default 15 days to load extremely fast and fresh!
+  const [pncpCurrentPage, setPncpCurrentPage] = useState(1);
+  const [pncpResults, setPncpResults] = useState<any[]>([]);
+  const [pncpTotalRecords, setPncpTotalRecords] = useState(0);
+  const [pncpTotalPages, setPncpTotalPages] = useState(0);
+  const [pncpIsLoading, setPncpIsLoading] = useState(false);
+  const [pncpHasSearched, setPncpHasSearched] = useState(false);
+  const [pncpAIEnhance, setPncpAIEnhance] = useState(true);
 
   // Overlays and modals controls
   const [showGlobalAlerts, setShowGlobalAlerts] = useState(false);
@@ -265,6 +279,18 @@ export default function App() {
         {/* Main Dashboard Tab Selector */}
         <div className="flex border-b border-slate-100 bg-white p-1 rounded-2xl shadow-xs gap-1 font-sans">
           <button
+            onClick={() => setActiveMainView("rastreador")}
+            className={`flex-1 sm:flex-initial px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition duration-150 cursor-pointer flex items-center justify-center gap-2 ${
+              activeMainView === "rastreador"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-400 fill-amber-400" />
+            Rastreador de Editais PNCP
+          </button>
+          
+          <button
             onClick={() => setActiveMainView("editais")}
             className={`flex-1 sm:flex-initial px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition duration-150 cursor-pointer flex items-center justify-center gap-2 ${
               activeMainView === "editais"
@@ -273,8 +299,9 @@ export default function App() {
             }`}
           >
             <Database className="w-4 h-4" />
-            Monitoramento de Editais ({licitacoes.length})
+            Meus Editais ({licitacoes.length})
           </button>
+          
           <button
             onClick={() => setActiveMainView("fornecedores")}
             className={`flex-1 sm:flex-initial px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition duration-150 cursor-pointer flex items-center justify-center gap-2 ${
@@ -292,6 +319,37 @@ export default function App() {
           <GeneralSuppliers 
             licitacoes={licitacoes} 
             onOpenLicitacao={(id) => setSelectedLicitacaoId(id)} 
+          />
+        ) : activeMainView === "rastreador" ? (
+          <RastreadorPncp
+            licitacoes={licitacoes}
+            onSaveNewLicitacao={handleSaveNewLicitacao}
+            onOpenLicitacao={(id) => setSelectedLicitacaoId(id)}
+            user={user}
+            isGuestMode={isGuestMode}
+            searchTerm={pncpSearchTerm}
+            setSearchTerm={setPncpSearchTerm}
+            selectedUf={pncpSelectedUf}
+            setSelectedUf={setPncpSelectedUf}
+            selectedModality={pncpSelectedModality}
+            setSelectedModality={setPncpSelectedModality}
+            dateRange={pncpDateRange}
+            setDateRange={setPncpDateRange}
+            currentPage={pncpCurrentPage}
+            setCurrentPage={setPncpCurrentPage}
+            results={pncpResults}
+            setResults={setPncpResults}
+            totalRecords={pncpTotalRecords}
+            setTotalRecords={setPncpTotalRecords}
+            totalPages={pncpTotalPages}
+            setTotalPages={setPncpTotalPages}
+            isLoading={pncpIsLoading}
+            setIsLoading={setPncpIsLoading}
+            hasSearched={pncpHasSearched}
+            setHasSearched={setPncpHasSearched}
+            runAIEnhanceForImport={pncpAIEnhance}
+            setRunAIEnhanceForImport={setPncpAIEnhance}
+            setActiveMainView={setActiveMainView}
           />
         ) : (
           <>

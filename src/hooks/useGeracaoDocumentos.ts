@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CompanySetting, Licitacao } from "../types";
-import { auth } from "../firebase";
+import { auth, getClientAuthToken } from "../firebase";
 
 export function useGeracaoDocumentos(
   companySettings: CompanySetting, 
@@ -12,8 +12,7 @@ export function useGeracaoDocumentos(
   const handleGenerateDocTemplate = async (docType: string) => {
     setIsGeneratingDoc(true);
     try {
-      const currentUser = auth.currentUser;
-      const token = currentUser ? await currentUser.getIdToken() : "";
+      const token = await getClientAuthToken();
       const response = await fetch("/api/licitacoes/generate-document", {
         method: "POST",
         headers: { 

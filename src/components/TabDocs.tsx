@@ -143,10 +143,10 @@ export default function TabDocs({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {licitacao.arquivosPncp.map((file) => {
+            {licitacao.arquivosPncp.map((file, index) => {
               const isAttached = licitacao.checklist.some(item => item.name.toLowerCase() === file.nome.toLowerCase() || (item.obs && item.obs.toLowerCase().includes(file.nome.toLowerCase())));
               return (
-                <div key={file.id} className="p-3 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl transition duration-200 flex flex-col justify-between gap-3 font-sans">
+                <div key={`${file.id}-${index}`} className="p-3 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl transition duration-200 flex flex-col justify-between gap-3 font-sans">
                   <div className="space-y-1">
                     <div className="flex items-start gap-1.5 justify-between">
                       <span className="text-xs font-bold text-slate-800 truncate block max-w-[85%] hover:text-indigo-600" title={file.nome}>

@@ -223,16 +223,26 @@ export default function LicitacaoDetails({
             }`}
           >
             <div className="flex items-center gap-3 min-w-0">
-              <Users className="w-4 h-4 shrink-0" />
+              <Users className="w-4 h-4 shrink-0 text-indigo-500" />
               <span className="truncate">Fornecedores & Cotações</span>
             </div>
-            {activeSuppliers.length > 0 && (
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                activeTab === "suppliers" ? "bg-blue-500 text-white" : "bg-emerald-50 text-emerald-800"
-              }`}>
-                {activeSuppliers.filter(s => s.status === "cotado").length}/{activeSuppliers.length}
+            
+            <div className="flex items-center gap-1 shrink-0">
+              {activeSuppliers.length > 0 && (
+                <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-medium ${
+                  activeTab === "suppliers" ? "bg-blue-700 text-blue-100" : "bg-slate-100 text-slate-600"
+                }`} title="Empresas cotadas / vinculadas">
+                  {activeSuppliers.filter(s => s.status === "cotado").length}/{activeSuppliers.length}
+                </span>
+              )}
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-all ${
+                activeTab === "suppliers" 
+                  ? "bg-blue-500 text-white" 
+                  : "bg-indigo-100 text-indigo-800"
+              }`} title={`${getCompatibleSuppliers().length} fornecedores compatíveis com este edital`}>
+                {getCompatibleSuppliers().length}
               </span>
-            )}
+            </div>
           </button>
 
           <button
@@ -469,7 +479,7 @@ export default function LicitacaoDetails({
               </button>
               <button
                 type="button"
-                onClick={handleConfirmDelete}
+                onClick={() => handleConfirmDelete()}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm shadow-red-500/10 transition-colors cursor-pointer"
               >
                 Confirmar Exclusão

@@ -162,7 +162,12 @@ export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMod
       snapshot.forEach((doc) => {
         items.push({ id: doc.id, ...doc.data() } as Licitacao);
       });
-      setLicitacoes(items);
+      
+      // Merge with newly added local items that haven't synced to Firestore yet
+      setLicitacoes(prev => {
+        const unsynced = prev.filter(p => p.id.startsWith("pncp-") && !items.some(it => it.id === p.id));
+        return [...unsynced, ...items];
+      });
       setLoadingList(false);
     }, (error) => {
       try {

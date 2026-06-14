@@ -358,10 +358,10 @@ export default function TabDados({
                 </div>
               ) : (
                 <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                  {licitacao.arquivosPncp.map((file) => {
+                  {licitacao.arquivosPncp.map((file, index) => {
                     const isAttached = licitacao.checklist.some(item => item.name.toLowerCase() === file.nome.toLowerCase() || (item.obs && item.obs.toLowerCase().includes(file.nome.toLowerCase())));
                     return (
-                      <div key={file.id} className="p-2.5 bg-white border border-slate-150 rounded-lg flex items-center justify-between gap-3 shadow-2xs hover:border-slate-300 transition">
+                      <div key={`${file.id}-${index}`} className="p-2.5 bg-white border border-slate-150 rounded-lg flex items-center justify-between gap-3 shadow-2xs hover:border-slate-300 transition">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-bold text-slate-800 truncate block" title={file.nome}>
@@ -431,19 +431,22 @@ export default function TabDados({
         <div>
           <h3 className="font-bold text-gray-900 text-sm flex items-center gap-1.5 mb-2">
             <Sparkles className="w-4 h-4 text-indigo-600 animate-spin" />
-            Autopreenchimento Inteligente IA
+            Integração Segura PNCP & Inteligência Artificial
           </h3>
           <p className="text-xs text-gray-600 mb-4 leading-normal">
-            Adicione o link da página da licitação ou cole o texto visível do edital. A IA lerá tudo e preencherá o formulário automaticamente em poucos segundos!
+            Você pode inserir o <strong className="text-indigo-700">Link do Portal PNCP</strong>, o <strong className="text-indigo-700">Código de Contratação do PNCP</strong> (formato <code className="bg-white font-mono px-1 py-0.5 rounded border text-[11px] text-indigo-800">CNPJ/ANO/SEQUENCIAL</code>, ex: <code className="bg-white font-mono px-1 py-0.5 rounded border text-[11px] text-slate-700">00394460000141/2026/1</code>), ou simplesmente colar o texto do edital.
           </p>
+          <div className="p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-lg text-[11px] text-indigo-950 mb-4 leading-relaxed">
+            ✨ <strong className="text-indigo-900">Integração Direta Ativa:</strong> Links ou códigos do PNCP consultam as tabelas federais do governo em tempo real, baixando a descrição dos lotes e links para download dos arquivos originais com 100% de precisão!
+          </div>
 
           <div className="space-y-3">
             <div>
-              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Passo A: Link da Página (Scraper)</label>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Passo A: Link ou Código de Compra PNCP</label>
               <input
-                type="url"
-                placeholder="Insira o link da licitação pública..."
-                className="w-full text-xs border border-gray-200 rounded p-2 bg-white"
+                type="text"
+                placeholder="Ex: https://pncp.gov.br/app/editais/00394460000141/2026/1"
+                className="w-full text-xs border border-gray-200 rounded p-2 bg-white font-mono text-indigo-900 placeholder:font-sans"
                 value={scrapeUrl || ""}
                 onChange={(e) => setScrapeUrl(e.target.value)}
               />

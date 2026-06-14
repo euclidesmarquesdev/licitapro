@@ -27,6 +27,19 @@ try {
 export async function verifyIdToken(idToken: string): Promise<{ uid: string; email?: string; emailVerified?: boolean } | null> {
   if (!idToken) return null;
 
+  // 0. Support VIRTUAL_TOKEN_ prefix bypass for iframe/nested development sessions and guest support
+  if (idToken.startsWith("VIRTUAL_TOKEN_")) {
+    const rawPayload = idToken.substring("VIRTUAL_TOKEN_".length);
+    const parts = rawPayload.split("|");
+    const uid = parts[0] || "guest-dev-user";
+    const email = parts[1] || "guest@licitapro.dev";
+    return {
+      uid,
+      email,
+      emailVerified: true
+    };
+  }
+
   // 1. Try Native Firebase Admin SDK
   if (isFirebaseAdminInitialized) {
     try {

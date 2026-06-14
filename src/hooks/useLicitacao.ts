@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Licitacao, LicitacaoChecklistItem, CompetitorBid, SupplierContact } from "../types";
 import { parsePncpClipboardText, parseBrazilianDateToISO } from "../utils/pncpParser";
-import { auth } from "../firebase";
+import { auth, getClientAuthToken } from "../firebase";
 
 export function useLicitacao(
   initialLicitacao: Licitacao,
@@ -9,6 +9,11 @@ export function useLicitacao(
 ) {
   // Local reactive copy of licitacao to keep sync
   const [licitacao, setLicitacao] = useState<Licitacao>(initialLicitacao);
+
+  const updateLicitacao = (updated: Licitacao) => {
+    setLicitacao(updated);
+    onUpdate(updated);
+  };
 
   useEffect(() => {
     setLicitacao(initialLicitacao);
@@ -136,10 +141,10 @@ export function useLicitacao(
     if (deleteConfirm.type === "document") {
       handleDeleteDoc(deleteConfirm.itemId);
     } else if (deleteConfirm.type === "supplier") {
-      if (onDeleteSupplier) {
+      if (typeof onDeleteSupplier === "function") {
         onDeleteSupplier(deleteConfirm.itemId);
       } else {
-        onUpdate({
+        updateLicitacao({
           ...licitacao,
           suppliers: licitacao.suppliers.filter(s => s.id !== deleteConfirm.itemId),
           updatedAt: new Date().toISOString()
@@ -173,7 +178,7 @@ export function useLicitacao(
       dataFimPropostas,
       updatedAt: new Date().toISOString()
     };
-    onUpdate(updated);
+    updateLicitacao(updated);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
   };
@@ -192,14 +197,14 @@ export function useLicitacao(
       historicStatus: [historyItem, ...licitacao.historicStatus],
       updatedAt: new Date().toISOString()
     };
-    onUpdate(updated);
+    updateLicitacao(updated);
     setStatusNote("");
   };
 
   // Scraper implementation
-  const handleScrapeWithIA = async () => {
-    if (!scrapeUrl && !pasteText) {
-      setScrapeError("Por favor informe uma URL ou cole o texto do edital na caixa abaixo.");
+  const handleDirectPncpApiImport = async (inputVal: string) => {
+    if (!inputVal || inputVal.trim().length < 5) {
+      setScrapeError("Por favor informe uma URL completa ou Código de Contratação do PNCP.");
       return;
     }
 
@@ -207,8 +212,183 @@ export function useLicitacao(
     setScrapeError("");
 
     try {
-      const currentUser = auth.currentUser;
-      const token = currentUser ? await currentUser.getIdToken() : "";
+      const token = await getClientAuthToken();
+      // Use scrapeImportDocs as the trigger for AI Enhancement on top of actual results
+      const response = await fetch("/api/pncp/import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ urlOrCode: inputVal, runAIEnhance: scrapeImportDocs })
+      });
+
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.error || "Falha na importação direta via API Oficial PNCP.");
+      }
+
+      if (body.success && body.data) {
+        const d = body.data;
+
+        // 1. Sync React States so the Form is immediately populated
+        if (scrapeOverwriteCore) {
+          setEdital(d.edital || edital);
+          setOrgao(d.orgao || orgao);
+          setObjeto(d.objeto || objeto);
+          setModalidade(d.modalidade || modalidade);
+          setValorEstimado(d.valorEstimado || valorEstimado);
+          setDataSessao(d.dataSessao || dataSessao);
+          setCategoria(d.categoria || categoria);
+          setUrl(inputVal.startsWith("http") ? inputVal : url);
+        } else {
+          if (!edital && d.edital) setEdital(d.edital);
+          if (!orgao && d.orgao) setOrgao(d.orgao);
+          if (!objeto && d.objeto) setObjeto(d.objeto);
+          if (!modalidade && d.modalidade) setModalidade(d.modalidade);
+          if ((!valorEstimado || valorEstimado === 0) && d.valorEstimado) setValorEstimado(d.valorEstimado);
+          if (!dataSessao && d.dataSessao) setDataSessao(d.dataSessao);
+          if (!categoria && d.categoria) setCategoria(d.categoria);
+          if (!url && inputVal.startsWith("http")) setUrl(inputVal);
+        }
+
+        if (scrapeOverwriteLocation) {
+          setCidade(d.cidade || cidade);
+          setEstado(d.estado || estado);
+        } else {
+          if (!cidade && d.cidade) setCidade(d.cidade);
+          if (!estado && d.estado) setEstado(d.estado);
+        }
+
+        // PNCP exclusive fields:
+        setUnidadeCompradora(d.unidadeCompradora || unidadeCompradora);
+        setAmparoLegal(d.amparoLegal || amparoLegal);
+        setIdContratacaoPncp(d.idContratacaoPncp || idContratacaoPncp);
+        setModoDisputa(d.modoDisputa || modoDisputa);
+        setDataInicioPropostas(d.dataInicioPropostas || dataInicioPropostas);
+        setDataFimPropostas(d.dataFimPropostas || dataFimPropostas);
+
+        // 2. Build full updated Licitacao payload to sync with database:
+        let updatedChecklist = [...licitacao.checklist];
+        if (scrapeImportDocs && d.checklistRecomendado) {
+          d.checklistRecomendado.forEach((name: string, idx: number) => {
+            if (!updatedChecklist.some(item => item.name.toLowerCase() === name.toLowerCase())) {
+              updatedChecklist.push({
+                id: `c-direct-${idx}-${Date.now()}`,
+                name,
+                status: "pendente" as const,
+                updatedAt: new Date().toISOString(),
+                obs: "Recomendado para " + (d.modalidade || modalidade)
+              });
+            }
+          });
+        }
+
+        let updatedCompetitors = [...licitacao.competitors];
+        if (scrapeImportDocs && d.competitorsEstimated) {
+          d.competitorsEstimated.forEach((name: string, idx: number) => {
+            if (!updatedCompetitors.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+              updatedCompetitors.push({
+                id: `cp-direct-${idx}-${Date.now()}`,
+                name,
+                bidValue: 0,
+                status: "perdeu" as const
+              });
+            }
+          });
+        }
+
+        // Map Suppliers directly based on real items fetched!
+        let updatedSuppliers = [...licitacao.suppliers];
+        if (d.itensPncp && d.itensPncp.length > 0 && updatedSuppliers.length === 0) {
+          updatedSuppliers = d.itensPncp.map((it: any, idx: number) => ({
+            id: `pncp-sup-item-${idx}-${Date.now()}`,
+            name: `[PNCP] Item ${it.numero}`,
+            product: it.descricao,
+            value: it.valorUnitario,
+            contact: "(Disputa/Cotação)",
+            status: "aguardando" as const,
+            notes: `Item extraído da API Oficial: Qtd ${it.quantidade} | Valor Estimado Unitário: R$ ${it.valorUnitario.toFixed(2)} | Total do Item: R$ ${it.valorTotal.toFixed(2)}`
+          }));
+        }
+
+        // Clean-up and final payload save
+        const finalLicitacao: Licitacao = {
+          ...licitacao,
+          edital: scrapeOverwriteCore ? (d.edital || edital) : (edital || d.edital),
+          orgao: scrapeOverwriteCore ? (d.orgao || orgao) : (orgao || d.orgao),
+          objeto: scrapeOverwriteCore ? (d.objeto || objeto) : (objeto || d.objeto),
+          modalidade: scrapeOverwriteCore ? (d.modalidade || modalidade) : (modalidade || d.modalidade),
+          valorEstimado: scrapeOverwriteCore ? Number(d.valorEstimado || valorEstimado) : Number(valorEstimado || d.valorEstimado || 0),
+          dataSessao: scrapeOverwriteCore ? (d.dataSessao || dataSessao) : (dataSessao || d.dataSessao),
+          cidade: scrapeOverwriteLocation ? (d.cidade || cidade) : (cidade || d.cidade),
+          estado: scrapeOverwriteLocation ? (d.estado || estado) : (estado || d.estado),
+          categoria: scrapeOverwriteCore ? (d.categoria || categoria) : (categoria || d.categoria),
+          url: inputVal.startsWith("http") ? inputVal : url,
+          checklist: updatedChecklist,
+          competitors: updatedCompetitors,
+          suppliers: updatedSuppliers,
+          
+          unidadeCompradora: d.unidadeCompradora || unidadeCompradora,
+          amparoLegal: d.amparoLegal || amparoLegal,
+          idContratacaoPncp: d.idContratacaoPncp || idContratacaoPncp,
+          modoDisputa: d.modoDisputa || modoDisputa,
+          dataInicioPropostas: d.dataInicioPropostas || dataInicioPropostas,
+          dataFimPropostas: d.dataFimPropostas || dataFimPropostas,
+          itensPncp: d.itensPncp || [],
+          arquivosPncp: d.arquivosPncp || [],
+
+          updatedAt: new Date().toISOString()
+        };
+
+        updateLicitacao(finalLicitacao);
+        setScrapeUrl("");
+        setPasteText("");
+        
+        // Show celebration effect
+        setCelebration({
+          isOpen: true,
+          type: "items",
+          message: `Conectado ao PNCP! ${d.itensPncp?.length || 0} itens oficiais e ${d.arquivosPncp?.length || 0} arquivos do edital importados em tempo real!`
+        });
+      }
+    } catch (err: any) {
+      console.error("Direct PNCP API Import failed, falling back to old Scrape flow:", err);
+      // Fallback: Continue with standard scrape if we can
+      await handleScrapeFallback();
+    } finally {
+      setIsScraping(false);
+    }
+  };
+
+  const handleScrapeWithIA = async () => {
+    if (!scrapeUrl && !pasteText) {
+      setScrapeError("Por favor informe uma URL ou cole o texto do edital na caixa abaixo.");
+      return;
+    }
+
+    // Direct Integration Detection trigger
+    const inputToCheck = (scrapeUrl || pasteText || "").trim();
+    const isDirectPncp = inputToCheck.includes("pncp.gov.br") || 
+                         inputToCheck.includes("/editais/") || 
+                         inputToCheck.includes("/compras/") || 
+                         /^\d{14}/.test(inputToCheck) || 
+                         /\d{14}[-/]\d+[-/]/.test(inputToCheck);
+
+    if (isDirectPncp) {
+      await handleDirectPncpApiImport(inputToCheck);
+      return;
+    }
+
+    await handleScrapeFallback();
+  };
+
+  const handleScrapeFallback = async () => {
+    setIsScraping(true);
+    setScrapeError("");
+
+    try {
+      const token = await getClientAuthToken();
       const response = await fetch("/api/licitacoes/scrape", {
         method: "POST",
         headers: { 
@@ -258,7 +438,10 @@ export function useLicitacao(
         let finalModoDisputa = modoDisputa;
         let finalDataInicio = dataInicioPropostas;
         let finalDataFim = dataFimPropostas;
-        let finalItens = licitacao.itensPncp || [];
+        const localExtracted = pasteText ? parsePncpClipboardText(pasteText) : null;
+        let finalItens = localExtracted && localExtracted.itens && localExtracted.itens.length > 0 
+          ? localExtracted.itens 
+          : (licitacao.itensPncp || []);
         let finalArquivos = [...(licitacao.arquivosPncp || [])];
         
         if (extracted.arquivosPncp && extracted.arquivosPncp.length > 0) {
@@ -317,7 +500,7 @@ export function useLicitacao(
           }));
         }
 
-        onUpdate({
+        updateLicitacao({
           ...licitacao,
           edital: scrapeOverwriteCore ? (extracted.edital || edital) : (edital || extracted.edital),
           orgao: scrapeOverwriteCore ? (extracted.orgao || orgao) : (orgao || extracted.orgao),
@@ -583,8 +766,7 @@ export function useLicitacao(
   const handleAIPredict = async () => {
     setIsPredicting(true);
     try {
-      const currentUser = auth.currentUser;
-      const token = currentUser ? await currentUser.getIdToken() : "";
+      const token = await getClientAuthToken();
       const response = await fetch("/api/licitacoes/predict", {
         method: "POST",
         headers: { 

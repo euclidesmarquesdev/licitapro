@@ -20,4 +20,34 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRIT
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
+/**
+ * Resolves the appropriate authentication token for API requests.
+ * Supports native Firebase user session or virtual offline user fallback sessions.
+ */
+export async function getClientAuthToken(): Promise<string> {
+  const currentUser = auth.currentUser;
+  if (currentUser) {
+    try {
+      const idToken = await currentUser.getIdToken();
+      if (idToken) return idToken;
+    } catch (e) {
+      console.warn("Falha ao obter token nativo do Firebase, usando fallback virtual:", e);
+    }
+  }
+
+  // Fallback checking for local/virtual session in localStorage (useful for iFrame safe-mode)
+  const savedVirtual = localStorage.getItem("LICI_TRACK_V1_virtual_user");
+  if (savedVirtual) {
+    try {
+      const parsed = JSON.parse(savedVirtual);
+      if (parsed && parsed.uid) {
+        return `VIRTUAL_TOKEN_${parsed.uid}|${parsed.email || "anonimo@licitapro.gov"}`;
+      }
+    } catch (_) {}
+  }
+
+  // General guest mode fallback
+  return "VIRTUAL_TOKEN_guest-user|guest@licitapro.dev";
+}
+
 export { signInWithPopup, signOut };

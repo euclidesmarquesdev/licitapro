@@ -74,13 +74,8 @@ export default function TabSuppliers({
     setCustomItemValue(0);
   };
 
-  // Text pool to match and rank suppliers by affinity overlap
-  const textPool = [
-    licitacao.objeto || "",
-    licitacao.edital || "",
-    licitacao.categoria || "",
-    ...(licitacao.itensPncp || []).map(item => item.descricao || "")
-  ].join(" ").toLowerCase();
+  // Text pool strictly aligned with the "objeto do edital" (licitacao.objeto)
+  const textPool = (licitacao.objeto || "").toLowerCase();
 
   const getSupplierAffinity = (sup: any) => {
     let score = 0;
@@ -337,6 +332,26 @@ export default function TabSuppliers({
                       <p className="text-[10px] text-slate-600 leading-tight">
                         <strong>Produto padrão:</strong> {sup.product}
                       </p>
+
+                      {sup.categoryKeywords && sup.categoryKeywords.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1 pt-1 border-t border-dashed border-slate-100">
+                          {sup.categoryKeywords.map((kw: string, kIdx: number) => {
+                            const isMatch = (licitacao.objeto || "").toLowerCase().includes(kw.toLowerCase().trim());
+                            return (
+                              <span
+                                key={kIdx}
+                                className={`text-[8.5px] px-1.5 py-0.5 rounded font-mono ${
+                                  isMatch
+                                    ? "bg-indigo-100 text-indigo-800 font-bold border border-indigo-200"
+                                    : "bg-slate-50 text-slate-400 border border-slate-100"
+                                }`}
+                              >
+                                #{kw}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
 
                       <div className="space-y-0.5 mt-1 border-t border-slate-100 pt-1.5">
                         <div className="text-[10px] text-slate-600 flex items-center gap-1.5">

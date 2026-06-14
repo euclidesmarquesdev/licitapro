@@ -6,7 +6,9 @@ import {
   handlePredictBidding,
   handleGenerateDocument,
   handleGetAuditHistory,
-  handleGetUsageStats
+  handleGetUsageStats,
+  handlePncpImport,
+  handlePncpSearch
 } from "../controllers/licitacaoController";
 
 const router = express.Router();
@@ -16,6 +18,8 @@ router.use(rateLimiterMiddleware);
 
 // Define bidding process routes, guarded by Firebase/Google Account verifies
 router.post("/licitacoes/scrape", authMiddleware, handleScrapeBidding);
+router.post("/pncp/import", authMiddleware, handlePncpImport);
+router.get("/pncp/search", authMiddleware, handlePncpSearch);
 router.post("/licitacoes/predict", authMiddleware, handlePredictBidding);
 router.post("/licitacoes/generate-document", authMiddleware, handleGenerateDocument);
 

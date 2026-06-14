@@ -3,7 +3,7 @@ import { Licitacao, SupplierContact } from "../types";
 import { 
   ShieldCheck, Scale, Info, Calculator, AlertTriangle, RefreshCw, Database 
 } from "lucide-react";
-import { auth } from "../firebase";
+import { auth, getClientAuthToken } from "../firebase";
 
 interface TabProps {
   licitacao: Licitacao;
@@ -43,8 +43,7 @@ export default function TabCompliance({
   const fetchAuditLogs = async () => {
     try {
       setLogsLoading(true);
-      const currentUser = auth.currentUser;
-      const token = currentUser ? await currentUser.getIdToken() : "";
+      const token = await getClientAuthToken();
       const res = await fetch("/api/ia/audit/history", {
         headers: {
           "Authorization": `Bearer ${token}`

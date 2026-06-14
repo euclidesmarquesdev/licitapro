@@ -47,7 +47,10 @@ function computeBlockSignature(log: Omit<AIAuditLog, "signature">): string {
 export async function saveAuditLogToFirestore(idToken: string, log: AIAuditLog, userId: string) {
   try {
     const projectId = firebaseConfig.projectId;
-    if (!projectId) return;
+    if (!projectId || !idToken || idToken.startsWith("VIRTUAL_TOKEN_")) {
+      console.log(`[LicitaPro Audit] Sessão offline/virtual detectada para bloco ${log.id}. Mantendo log local em memória.`);
+      return;
+    }
     const databaseId = firebaseConfig.firestoreDatabaseId || "(default)";
     const logId = log.id;
     
@@ -95,7 +98,10 @@ export async function saveAuditLogToFirestore(idToken: string, log: AIAuditLog, 
 export async function getAuditLogsFromFirestore(idToken: string, userId: string): Promise<AIAuditLog[]> {
   try {
     const projectId = firebaseConfig.projectId;
-    if (!projectId) return [];
+    if (!projectId || !idToken || idToken.startsWith("VIRTUAL_TOKEN_")) {
+      console.log("[LicitaPro Audit] Sessão offline/virtual. Retornando logs locais em memória.");
+      return getInMemoryAuditLogs();
+    }
     const databaseId = firebaseConfig.firestoreDatabaseId || "(default)";
     
     const body = {

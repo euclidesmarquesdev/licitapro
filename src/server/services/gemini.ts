@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
+export { Type };
 import { withTimeout } from "../utils/timeout";
 
 // Ensure Gemini API key is configured

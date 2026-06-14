@@ -124,14 +124,12 @@ export default function GeneralSuppliers({ licitacoes, onOpenLicitacao }: Genera
   // Check matching active tenders for each supplier
   const getMatchingTenders = (sup: typeof MOCK_CATALOG_SUPPLIERS[0]) => {
     return licitacoes.filter(lic => {
-      const textPool = [
-        lic.objeto || "",
-        lic.edital || "",
-        lic.categoria || "",
-        ...(lic.itensPncp || []).map(i => i.descricao || "")
-      ].join(" ").toLowerCase();
-
-      return sup.categoryKeywords.some(keyword => textPool.includes(keyword));
+      const objetoText = (lic.objeto || "").toLowerCase();
+      const keywords = sup.categoryKeywords || [];
+      return keywords.some(keyword => {
+        const kw = keyword.toLowerCase().trim();
+        return kw && objetoText.includes(kw);
+      });
     });
   };
 

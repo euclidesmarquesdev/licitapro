@@ -3,6 +3,7 @@ import { Database, PlusCircle, Settings, RefreshCw, Sparkles } from "lucide-reac
 import { Licitacao } from "../types";
 import { CATEGORIAS_LICITACAO } from "../data";
 import { parsePncpClipboardText, parseBrazilianDateToISO } from "../utils/pncpParser";
+import { getClientAuthToken } from "../firebase";
 
 interface AddLicitacaoModalProps {
   isOpen: boolean;
@@ -114,9 +115,13 @@ export default function AddLicitacaoModal({
     
     setParsingLoading(true);
     try {
+      const token = await getClientAuthToken();
       const res = await fetch("/api/licitacoes/scrape", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ rawText: pastedPNCP })
       });
       
