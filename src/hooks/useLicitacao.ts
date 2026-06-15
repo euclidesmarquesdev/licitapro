@@ -213,19 +213,133 @@ export function useLicitacao(
 
     try {
       const token = await getClientAuthToken();
-      // Use scrapeImportDocs as the trigger for AI Enhancement on top of actual results
-      const response = await fetch("/api/pncp/import", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ urlOrCode: inputVal, runAIEnhance: scrapeImportDocs })
-      });
+      let body: any;
 
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.error || "Falha na importação direta via API Oficial PNCP.");
+      try {
+        const response = await fetch("/api/pncp/import", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ urlOrCode: inputVal, runAIEnhance: scrapeImportDocs })
+        });
+
+        const textRes = await response.text();
+        if (response.ok) {
+          body = JSON.parse(textRes);
+        } else {
+          try {
+            const parsedErr = JSON.parse(textRes);
+            throw new Error(parsedErr.error || `Servidor de importação retornou erro ${response.status}`);
+          } catch (e: any) {
+            throw new Error(e.message || `Servidor de importação retornou erro ${response.status}`);
+          }
+        }
+      } catch (backendErr: any) {
+        console.warn("[PNCP Client] Falha na importação pelo backend (bloqueio de nuvem GCP). Tentando conexão direta do navegador para o portal PNCP...", backendErr.message);
+
+        // Parse CNPJ, Year, and Seq number using our robust strategy
+        let cnpj = "";
+        let ano = "";
+        let sequencial = "";
+
+        const cleanInput = inputVal.trim();
+        const urlRegex = /(\d{14})\/(\d{4})\/(\d+)/;
+        const urlMatch = cleanInput.match(urlRegex);
+
+        if (urlMatch) {
+          cnpj = urlMatch[1];
+          ano = urlMatch[2];
+          sequencial = urlMatch[3];
+        } else {
+          const numbers = cleanInput.match(/\d+/g) || [];
+          const foundCnpj = numbers.find(n => n.length === 14);
+          if (foundCnpj) {
+            cnpj = foundCnpj;
+            const foundYear = numbers.find(n => n.length === 4 && parseInt(n) >= 2021 && parseInt(n) <= 2030);
+            if (foundYear) {
+              ano = foundYear;
+              const otherNumbers = numbers.filter(n => n !== cnpj && n !== ano);
+              if (otherNumbers.length > 0) {
+                sequencial = otherNumbers[otherNumbers.length - 1];
+              }
+            }
+          }
+        }
+
+        if (!cnpj || !ano || !sequencial) {
+          throw new Error("Código ou Link PNCP não pôde ser analisado pelo navegador. Verifique o padrão inserido.");
+        }
+
+        // 1. Fetch details directly from PNCP portal via browser
+        const detailsRes = await fetch(`https://pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`);
+        if (!detailsRes.ok) {
+          throw new Error(`Falha ao conectar ao portal PNCP oficial via navegador (HTTP ${detailsRes.status}). O portal nacional de compras públicas pode estar indisponível.`);
+        }
+        const purchaseDetails = await detailsRes.json();
+
+        // 2. Fetch items direct (try both endpoints/paths)
+        let itemsList: any[] = [];
+        try {
+          const itemsRes = await fetch(`https://pncp.gov.br/api/pncp/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}/itens?pagina=1&tamanhoPagina=500`);
+          if (itemsRes.ok) {
+            const itemsData = await itemsRes.json();
+            itemsList = Array.isArray(itemsData) ? itemsData : (itemsData.resultado || []);
+          } else {
+            const itemsResAlt = await fetch(`https://pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}/itens?pagina=1&tamanhoPagina=500`);
+            if (itemsResAlt.ok) {
+              const itemsDataAlt = await itemsResAlt.json();
+              itemsList = Array.isArray(itemsDataAlt) ? itemsDataAlt : (itemsDataAlt.data || itemsDataAlt.resultado || []);
+            }
+          }
+        } catch (e) {}
+
+        // 3. Fetch files direct (try both endpoints/paths)
+        let filesList: any[] = [];
+        try {
+          const filesRes = await fetch(`https://pncp.gov.br/api/pncp/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}/arquivos`);
+          if (filesRes.ok) {
+            const filesData = await filesRes.json();
+            filesList = Array.isArray(filesData) ? filesData : (filesData.resultado || []);
+          } else {
+            const filesResAlt = await fetch(`https://pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}/arquivos`);
+            if (filesResAlt.ok) {
+              const filesDataAlt = await filesResAlt.json();
+              filesList = Array.isArray(filesDataAlt) ? filesDataAlt : (filesDataAlt.data || filesDataAlt.resultado || []);
+            }
+          }
+        } catch (e) {}
+
+        // Submit harvested dataset back to server endpoint for standardizing & optional AI strategic analysis
+        const importResponse = await fetch("/api/pncp/import", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            urlOrCode: inputVal,
+            runAIEnhance: scrapeImportDocs,
+            clientProvidedData: {
+              purchaseDetails,
+              itemsList,
+              filesList
+            }
+          })
+        });
+
+        const textBody = await importResponse.text();
+        if (importResponse.ok) {
+          body = JSON.parse(textBody);
+        } else {
+          try {
+            const parsed = JSON.parse(textBody);
+            throw new Error(parsed.error || "Falha ao sincronizar dados importados no banco do servidor.");
+          } catch (e: any) {
+            throw new Error(e.message || "Falha ao sincronizar dados importados no banco do servidor.");
+          }
+        }
       }
 
       if (body.success && body.data) {

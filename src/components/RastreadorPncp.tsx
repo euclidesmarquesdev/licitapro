@@ -75,6 +75,7 @@ export default function RastreadorPncp({
   // Loading/feedback indicators for specific items imports
   const [importingId, setImportingId] = useState<string | null>(null);
   const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
+  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
 
   // Smart state validator to prevent unneeded re-fetching when changing tab back & forth
   const [lastSearchedFilters, setLastSearchedFilters] = useState({
@@ -85,6 +86,7 @@ export default function RastreadorPncp({
 
   // Predefined PNCP modalities (Mapped with precise backend codes in 14.133 context)
   const modalitiesList = [
+    { value: "Todos", label: "Todas" },
     { value: "6", label: "Pregão" },
     { value: "8", label: "Dispensa de Licitação" },
     { value: "4", label: "Concorrência" },
@@ -143,16 +145,99 @@ export default function RastreadorPncp({
         termo: termToUse
       });
 
-      const response = await fetch(`/api/pncp/search?${params.toString()}`, {
-        headers: {
-          "Authorization": `Bearer ${token}`
+      let data: any;
+
+      try {
+        const response = await fetch(`/api/pncp/search?${params.toString()}`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+
+        const textResponse = await response.text();
+        if (response.ok) {
+          data = JSON.parse(textResponse);
+        } else {
+          try {
+            const parsedErr = JSON.parse(textResponse);
+            throw new Error(parsedErr.error || `Servidor de busca retornou erro ${response.status}`);
+          } catch (e: any) {
+            throw new Error(e.message || `Servidor de busca retornou erro ${response.status}`);
+          }
         }
-      });
+      } catch (backendErr: any) {
+        console.warn("[PNCP Client] Falha na busca pelo backend (bloqueio de nuvem GCP). Tentando conexão direta do navegador para PNCP...", backendErr.message);
+        
+        const directParams = new URLSearchParams({
+          dataInicial: dates.start,
+          dataFinal: dates.end,
+          tamanhoPagina: "50",
+          pagina: String(pageToFetch)
+        });
 
-      const data = await response.json();
+        if (selectedModality && selectedModality !== "Todos" && selectedModality !== "") {
+          directParams.append("codigoModalidadeContratacao", selectedModality);
+        }
+        if (selectedUf && selectedUf !== "Todos" && selectedUf !== "") {
+          directParams.append("uf", selectedUf);
+        }
 
-      if (!response.ok) {
-        throw new Error(data.error || "Não foi possível obter dados do PNCP");
+        const directUrls = [
+          `https://dadosabertos.pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`,
+          `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`
+        ];
+
+        let directRawData: any = null;
+        let lastDirectErr: any = null;
+
+        for (const url of directUrls) {
+          try {
+            console.log(`[PNCP Client] Tentando conexão direta para: ${url}`);
+            const directRes = await fetch(url, {
+              headers: {
+                "Accept": "application/json"
+              }
+            });
+            if (directRes.ok) {
+              directRawData = await directRes.json();
+              console.log("[PNCP Client] Conexão direta com sucesso usando origin:", url);
+              break;
+            } else {
+              lastDirectErr = new Error(`HTTP ${directRes.status}`);
+            }
+          } catch (err: any) {
+            console.warn(`[PNCP Client] Falha de conexão na URL ${url}:`, err.message);
+            lastDirectErr = err;
+          }
+        }
+
+        if (!directRawData) {
+          throw new Error(`Falha de conexão com o PNCP Governamental (Erro: ${lastDirectErr?.message || "Servidor indetectável"}). O portal nacional de compras públicas pode estar fora do ar ou bloqueando conexões directas.`);
+        }
+
+        let rawList = directRawData.data || [];
+
+        // Apply client-side keyword filtering matching the backend strategy
+        if (termToUse && termToUse.trim().length > 0) {
+          const cleanSearch = (str: string) => (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          const keyword = cleanSearch(termToUse);
+          rawList = rawList.filter((item: any) => {
+            const orgaoName = cleanSearch(item.orgaoEntidade?.razaoSocial || "");
+            const objeto = cleanSearch(item.objetoCompra || item.objeto || "");
+            const numPncp = cleanSearch(item.numeroControlePNCP || "");
+            return orgaoName.includes(keyword) || objeto.includes(keyword) || numPncp.includes(keyword);
+          });
+        }
+
+        data = {
+          success: true,
+          data: {
+            data: rawList.slice(0, 15),
+            totalRegistros: termToUse && termToUse.trim().length > 0 ? rawList.length : (directRawData.totalRegistros || rawList.length),
+            totalPaginas: termToUse && termToUse.trim().length > 0 ? Math.max(1, Math.ceil(rawList.length / 15)) : (directRawData.totalPaginas || 1),
+            isMock: false
+          }
+        };
       }
 
       if (data.success && data.data) {
@@ -161,10 +246,12 @@ export default function RastreadorPncp({
         setTotalRecords(payload.totalRegistros || 0);
         setTotalPages(payload.totalPaginas || 1);
         setCurrentPage(pageToFetch);
+        setIsOfflineFallback(!!payload.isMock);
       } else {
         setResults([]);
         setTotalRecords(0);
         setTotalPages(1);
+        setIsOfflineFallback(false);
       }
     } catch (err: any) {
       console.error("[PNCP Tracker Client] Search error:", err);
@@ -222,7 +309,18 @@ export default function RastreadorPncp({
         })
       });
 
-      const body = await response.json();
+      let body: any;
+      const importText = await response.text();
+      try {
+        body = JSON.parse(importText);
+      } catch (jsonErr) {
+        if (!response.ok) {
+          throw new Error(`Erro do servidor de importação (Status ${response.status}). O sistema federal PNCP pode estar sobrecarregado.`);
+        } else {
+          throw new Error("Resposta incompreensível do servidor de importação.");
+        }
+      }
+
       if (!response.ok) {
         throw new Error(body.error || "Erro de extração de tabelas no portal PNCP.");
       }

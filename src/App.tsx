@@ -77,7 +77,7 @@ export default function App() {
   // Lifted PNCP search tracker states to persist search results & filters on tab switches
   const [pncpSearchTerm, setPncpSearchTerm] = useState("");
   const [pncpSelectedUf, setPncpSelectedUf] = useState("Todos");
-  const [pncpSelectedModality, setPncpSelectedModality] = useState("6"); // Default 6 (Pregão Eletrônico)
+  const [pncpSelectedModality, setPncpSelectedModality] = useState("Todos"); // Default "Todos" (Pregão, Dispensa, Concorrência, etc.)
   const [pncpDateRange, setPncpDateRange] = useState("15"); // Default 15 days to load extremely fast and fresh!
   const [pncpCurrentPage, setPncpCurrentPage] = useState(1);
   const [pncpResults, setPncpResults] = useState<any[]>([]);

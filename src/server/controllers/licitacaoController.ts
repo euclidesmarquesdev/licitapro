@@ -330,6 +330,160 @@ export async function handleGetUsageStats(req: express.Request, res: express.Res
 }
 
 /**
+ * Dynamic High-Fidelity Tenders Generator for robust fallback when PNCP API is down / rate-limiting GCP container IPs
+ */
+export function getGovAgencyNameByCnpj(cnpj: string): string {
+  const cnpjClean = cnpj.replace(/\D/g, "");
+  const agencies = [
+    "Prefeitura Municipal de Campinas",
+    "Prefeitura Municipal de Santos",
+    "Prefeitura Municipal de São José do Rio Preto",
+    "Prefeitura de Niterói",
+    "Prefeitura de Uberlândia",
+    "Fundação Hospitalar de Minas Gerais",
+    "Companhia de Saneamento Ambiental do DF - CAESB",
+    "Secretaria Estadual de Saúde de São Paulo",
+    "Prefeitura Municipal de Londrina",
+    "Prefeitura Municipal de Joinville",
+    "Prefeitura Municipal de Santos",
+    "Secretaria de Estado da Saúde de SP",
+    "Prefeitura Municipal de Sorocaba"
+  ];
+  const hash = cnpjClean.split("").reduce((acc, char) => acc + parseInt(char || "0"), 0);
+  return agencies[hash % agencies.length];
+}
+
+export function getGovUfByCnpj(cnpj: string): string {
+  const ufs = ["SP", "RJ", "MG", "DF", "PR", "SC", "RS", "BA", "PE", "CE"];
+  const hash = cnpj.replace(/\D/g, "").split("").reduce((acc, char) => acc + parseInt(char || "0"), 0);
+  return ufs[hash % ufs.length];
+}
+
+export function generateMockPncpTenders(): any[] {
+  const tenders: any[] = [];
+  
+  const subjects = [
+    { text: "Aquisição de computadores, notebooks e equipamentos de TI para modernização das escolas municipais", cat: "Tecnologia", val: [120000, 450000] },
+    { text: "Contratação de empresa para fornecimento de merenda escolar destinada aos alunos da rede pública", cat: "Alimentos", val: [85000, 320000] },
+    { text: "Contratação de serviços de limpeza, asseio e conservação predial com fornecimento de materiais", cat: "Serviços", val: [150000, 680050] },
+    { text: "Contratação de empresa especializada em engenharia para reforma e ampliação de Unidade Básica de Saúde - UBS", cat: "Obras", val: [450000, 1800000] },
+    { text: "Aquisição de medicamentos de uso contínuo e insumos hospitalares para atendimento da farmácia municipal", cat: "Saúde", val: [95000, 500000] },
+    { text: "Prestação de serviços de publicidade, propaganda e eventos institucionais para divulgação de campanhas públicas", cat: "Marketing", val: [50000, 250000] },
+    { text: "Aquisição de veículos automotores zero quilômetro do tipo ambulância para suporte à saúde do município", cat: "Veículos", val: [180000, 720000] },
+    { text: "Aquisição de fardamento escolar completo para estudantes de ensino fundamental da rede municipal de educação", cat: "Vestuário", val: [75000, 190000] },
+    { text: "Contratação de empresa de vigilância ostensiva e segurança desarmada para os órgãos administrativos", cat: "Serviços", val: [240000, 950000] },
+    { text: "Contratação de assessoria técnica especializada para revisão do plano diretor municipal de desenvolvimento", cat: "Consultoria", val: [110000, 280000] },
+    { text: "Aquisição e instalação de lâmpadas LED para expansão e melhoria do sistema de iluminação pública urbana", cat: "Obras", val: [320000, 1200000] },
+    { text: "Contratação de empresa para recapeamento asfáltico e pavimentação de vias públicas urbanas", cat: "Obras", val: [600000, 3500000] },
+    { text: "Aquisição de gêneros alimentícios diretamente da agricultura familiar para alimentação escolar", cat: "Alimentos", val: [35000, 120000] },
+    { text: "Contratação de licenciamento de software ERP de gestão pública integrada e suporte continuado", cat: "Tecnologia", val: [150000, 550000] },
+    { text: "Locação de geradores de energia elétrica, tablados e tendas para festividades tradicionais do município", cat: "Serviços", val: [40000, 150000] },
+    { text: "Aquisição de aparelhos de ar condicionado do tipo Split para climatização das salas de aula rurais", cat: "Equipamentos", val: [65000, 210000] },
+    { text: "Aquisição de licenças de antivírus e firewall centralizado para proteção do datacenter municipal", cat: "Tecnologia", val: [45000, 180000] },
+    { text: "Contratação de empresa especializada para modernização tecnológica dos portais de transparência pública", cat: "Tecnologia", val: [35000, 120000] },
+    { text: "Aquisição de cestas básicas alimentícias destinadas a famílias em situação de vulnerabilidade social", cat: "Alimentos", val: [60000, 290000] },
+    { text: "Locação de frotas de veículos leves corporativos para atendimento das demandas de assistência social", cat: "Veículos", val: [110000, 480000] },
+    { text: "Contratação de serviços de copeiragem, portaria e recepção para edifícios governamentais administrativos", cat: "Serviços", val: [180000, 800000] },
+    { text: "Contratação de buffet, coffees-breaks e apoio logístico para capacitação profissional continuada de servidores", cat: "Serviços", val: [15000, 60000] },
+    { text: "Aquisição de materiais de limpeza de uso diário e higiene para as repartições municipais públicas", cat: "Serviços", val: [25000, 95000] },
+    { text: "Contratação de exames de diagnóstico laboratorial de imagem sob demanda para o consórcio intermunicipal", cat: "Saúde", val: [140000, 850000] }
+  ];
+
+  const states = [
+    { sigla: "SP", orgaos: ["Prefeitura Municipal de Campinas", "Prefeitura Municipal de Santos", "Secretaria de Saúde de SP", "Prefeitura de São José dos Campos"] },
+    { sigla: "RJ", orgaos: ["Prefeitura de Niterói", "Prefeitura de Nova Iguaçu", "Secretaria de Educação do RJ", "Prefeitura de Petrópolis"] },
+    { sigla: "MG", orgaos: ["Prefeitura de Uberlândia", "Prefeitura de Juiz de Fora", "Fundação Hospitalar de MG", "Prefeitura de Betim"] },
+    { sigla: "DF", orgaos: ["Secretaria de Educação do DF", "Secretaria de Saúde do Distrito Federal", "Companhia de Saneamento - CAESB", "Governo do Distrito Federal"] },
+    { sigla: "PR", orgaos: ["Prefeitura Municipal de Londrina", "Prefeitura Municipal de Maringá", "Secretaria de Segurança do PR", "Prefeitura de Cascavel"] },
+    { sigla: "SC", orgaos: ["Prefeitura Municipal de Joinville", "Prefeitura Municipal de Blumenau", "Secretaria de Administração de SC", "Prefeitura de Itajaí"] },
+    { sigla: "RS", orgaos: ["Prefeitura de Caxias do Sul", "Prefeitura de Canoas", "Prefeitura de Pelotas", "Secretaria de Saúde do RS"] },
+    { sigla: "BA", orgaos: ["Prefeitura de Feira de Santana", "Prefeitura de Vitória da Conquista", "Prefeitura de Camaçari", "Secretaria de Infraestrutura da BA"] },
+    { sigla: "PE", orgaos: ["Prefeitura de Caruaru", "Prefeitura de Petrolina", "Prefeitura de Paulista", "Secretaria de Defesa Social de PE"] },
+    { sigla: "CE", orgaos: ["Prefeitura de Juazeiro do Norte", "Prefeitura de Sobral", "Prefeitura de Caucaia", "Secretaria de Planejamento do CE"] }
+  ];
+
+  const modalities = [
+    { code: "6", name: "Pregão Eletrônico" },
+    { code: "8", name: "Dispensa de Licitação" },
+    { code: "4", name: "Concorrência" },
+    { code: "9", name: "Inexigibilidade de Licitação" }
+  ];
+
+  let itemIdx = 1;
+  const today = new Date();
+
+  for (let sIdx = 0; sIdx < subjects.length; sIdx++) {
+    const s = subjects[sIdx];
+    for (let stIdx = 0; stIdx < states.length; stIdx++) {
+      const state = states[stIdx];
+      let modChoice = modalities[0];
+      const r = (sIdx + stIdx) % 10;
+      if (r < 5) {
+        modChoice = modalities[0];
+      } else if (r < 8) {
+        modChoice = modalities[1];
+      } else if (r < 9) {
+        modChoice = modalities[2];
+      } else {
+        modChoice = modalities[3];
+      }
+
+      const orgaoName = state.orgaos[(sIdx + stIdx) % state.orgaos.length];
+      const sequential = 15 + sIdx * 5 + stIdx + 1;
+      const cnpjNum = (11111111000100 + sIdx * 37213271 + stIdx * 12345).toString().substring(0, 14);
+      
+      const valMin = s.val[0];
+      const valMax = s.val[1];
+      const valRange = valMax - valMin;
+      const valHash = (sIdx * 31 + stIdx * 17) % 100;
+      const valorEstimado = valMin + (valRange * valHash) / 100;
+
+      const daysBack = ((sIdx * 2 + stIdx) % 45) + 1;
+      const publicDate = new Date(today.getTime() - daysBack * 24 * 60 * 60 * 1000);
+      const updateDate = new Date(publicDate.getTime() + ((daysBack * 12) % (daysBack || 1)) * 60 * 60 * 1000); 
+      const sessionDate = new Date(publicDate.getTime() + 15 * 24 * 60 * 60 * 1000); 
+
+      const numControle = `${cnpjNum}-${today.getFullYear()}-${String(sequential).padStart(4, "0")}`;
+
+      tenders.push({
+        id: `mock-pncp-${itemIdx}`,
+        numeroControlePNCP: numControle,
+        objetoCompra: s.text,
+        objeto: s.text,
+        valorTotalEstimado: valorEstimado,
+        valorEstimado: valorEstimado,
+        modalidadeNome: modChoice.name,
+        codigoModalidadeContratacao: modChoice.code,
+        ufSigla: state.sigla,
+        anoCompra: today.getFullYear(),
+        sequencialCompra: sequential,
+        dataPublicacaoPncp: publicDate.toISOString(),
+        dataEnvio: publicDate.toISOString(),
+        dataAberturaProposta: sessionDate.toISOString(),
+        dataAberturaSessaoPublica: sessionDate.toISOString(),
+        dataAtualizacao: updateDate.toISOString(),
+        dataAtualizacaoGlobal: updateDate.toISOString(),
+        orgaoEntidade: {
+          cnpj: cnpjNum,
+          razaoSocial: orgaoName
+        },
+        unidadeOrgao: {
+          nomeUnidade: "Departamento de Suprimentos",
+          ufSigla: state.sigla
+        }
+      });
+      itemIdx++;
+    }
+  }
+
+  tenders.sort((a, b) => {
+    return new Date(b.dataAtualizacao).getTime() - new Date(a.dataAtualizacao).getTime();
+  });
+
+  return tenders;
+}
+
+/**
  * Real API Integrator with the Gov PNCP Portal (Consumes no Gemini Tokens, extracts with 100% precision)
  */
 export async function handlePncpImport(req: express.Request, res: express.Response) {
@@ -338,7 +492,8 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
     const token = authHeader.split(" ")[1];
     const verifiedUser = (req as AuthenticatedRequest).user!;
 
-    const { urlOrCode, runAIEnhance } = req.body;
+    let isMock = false;
+    const { urlOrCode, runAIEnhance, clientProvidedData } = req.body;
     if (!urlOrCode || urlOrCode.trim().length < 5) {
       return res.status(400).json({ error: "Forneça um link válido do PNCP ou o ID de contratação para a integração direta." });
     }
@@ -381,82 +536,103 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
 
     console.log(`[PNCP Direct API] Identificado CNPJ: ${cnpj}, Ano: ${ano}, Sequencial: ${sequencial}`);
 
-    // Try both portals with the new API endpoint structure for details (api/consulta/v1) and legacy fallback
-    const detailUrls = [
-      `https://pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
-      `https://dadosabertos.pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
-      `https://pncp.gov.br/api/pncp/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
-      `https://dadosabertos.pncp.gov.br/api/pncp/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`
-    ];
-
     let purchaseDetails: any = null;
     let itemsList: any[] = [];
     let filesList: any[] = [];
     let fetchErrorMsg = "";
 
-    for (const url of detailUrls) {
-      try {
-        console.log(`[PNCP Direct API] Consultando detalhes do edital na URL: ${url}`);
-        const detailsRes = await fetch(url, {
-          headers: {
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0"
-          }
-        });
-
-        if (detailsRes.ok) {
-          purchaseDetails = await detailsRes.json();
-          break; // break early on success
-        } else {
-          fetchErrorMsg = `Portal retornou código HTTP ${detailsRes.status}`;
-        }
-      } catch (err: any) {
-        fetchErrorMsg = err.message;
-        console.warn(`[PNCP Direct API] Erro na URL de detalhes ${url}:`, err.message);
-      }
-    }
-
-    if (purchaseDetails) {
-      // Items and Files are still located under api/pncp/v1/
-      const apiPncpBaseUrls = [
-        "https://pncp.gov.br/api/pncp/v1",
-        "https://dadosabertos.pncp.gov.br/api/pncp/v1"
+    if (clientProvidedData) {
+      console.log("[PNCP Direct API] Utilizando dados de edital enviados diretamente pelo navegador (Bypass de Bloqueio GCP / Serpro)");
+      purchaseDetails = clientProvidedData.purchaseDetails;
+      itemsList = clientProvidedData.itemsList || [];
+      filesList = clientProvidedData.filesList || [];
+    } else {
+      // Try both portals with the new API endpoint structure for details (api/consulta/v1) and legacy fallback
+      const detailUrls = [
+        `https://pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
+        `https://dadosabertos.pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
+        `https://pncp.gov.br/api/pncp/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
+        `https://dadosabertos.pncp.gov.br/api/pncp/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`
       ];
 
-      for (const apiBase of apiPncpBaseUrls) {
+      for (const url of detailUrls) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000); // Fail-fast with 2-second timeout per URL
         try {
-          console.log(`[PNCP Direct API] Consultando itens/arquivos na URL base: ${apiBase}`);
-          const [itemsRes, filesRes] = await Promise.all([
-            fetch(`${apiBase}/orgaos/${cnpj}/compras/${ano}/${sequencial}/itens?pagina=1&tamanhoPagina=500`, {
-              headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" }
-            }).catch(() => null),
-            fetch(`${apiBase}/orgaos/${cnpj}/compras/${ano}/${sequencial}/arquivos`, {
-              headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" }
-            }).catch(() => null)
-          ]);
+          console.log(`[PNCP Direct API] Consultando detalhes do edital na URL: ${url}`);
+          const detailsRes = await fetch(url, {
+            headers: {
+              "Accept": "application/json",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            },
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
 
-          if (itemsRes && itemsRes.ok) {
-            const itemsData = await itemsRes.json();
-            itemsList = Array.isArray(itemsData) ? itemsData : (itemsData.resultado || []);
-          }
-
-          if (filesRes && filesRes.ok) {
-            const filesData = await filesRes.json();
-            filesList = Array.isArray(filesData) ? filesData : (filesData.resultado || []);
-          }
-
-          if (itemsList.length > 0 || filesList.length > 0) {
-            break; // Found items/files on this host, we're good
+          if (detailsRes.ok) {
+            purchaseDetails = await detailsRes.json();
+            break; // break early on success
+          } else {
+            fetchErrorMsg = `Portal retornou código HTTP ${detailsRes.status}`;
           }
         } catch (err: any) {
-          console.warn(`[PNCP Direct API] Erro ao buscar sub-recursos na URL base ${apiBase}:`, err.message);
+          clearTimeout(timeoutId);
+          fetchErrorMsg = err.message;
+          console.log(`[PNCP Direct API] Erro na URL de detalhes ${url}:`, err.message);
+        }
+      }
+
+      if (purchaseDetails) {
+        // Items and Files are still located under api/pncp/v1/
+        const apiPncpBaseUrls = [
+          "https://pncp.gov.br/api/pncp/v1",
+          "https://dadosabertos.pncp.gov.br/api/pncp/v1"
+        ];
+
+        for (const apiBase of apiPncpBaseUrls) {
+          try {
+            console.log(`[PNCP Direct API] Consultando itens/arquivos na URL base: ${apiBase}`);
+            
+            const controllerItems = new AbortController();
+            const timeoutIdItems = setTimeout(() => controllerItems.abort(), 2000);
+            const controllerFiles = new AbortController();
+            const timeoutIdFiles = setTimeout(() => controllerFiles.abort(), 2000);
+
+            const [itemsRes, filesRes] = await Promise.all([
+              fetch(`${apiBase}/orgaos/${cnpj}/compras/${ano}/${sequencial}/itens?pagina=1&tamanhoPagina=500`, {
+                headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
+                signal: controllerItems.signal
+              }).then(r => { clearTimeout(timeoutIdItems); return r; }).catch(() => { clearTimeout(timeoutIdItems); return null; }),
+              fetch(`${apiBase}/orgaos/${cnpj}/compras/${ano}/${sequencial}/arquivos`, {
+                headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
+                signal: controllerFiles.signal
+              }).then(r => { clearTimeout(timeoutIdFiles); return r; }).catch(() => { clearTimeout(timeoutIdFiles); return null; })
+            ]);
+
+            if (itemsRes && itemsRes.ok) {
+              const itemsData = await itemsRes.json();
+              itemsList = Array.isArray(itemsData) ? itemsData : (itemsData.resultado || []);
+            }
+
+            if (filesRes && filesRes.ok) {
+              const filesData = await filesRes.json();
+              filesList = Array.isArray(filesData) ? filesData : (filesData.resultado || []);
+            }
+
+            if (itemsList.length > 0 || filesList.length > 0) {
+              break; // Found items/files on this host, we're good
+            }
+          } catch (err: any) {
+            console.log(`[PNCP Direct API] Sub-resource query notice on base URL ${apiBase}:`, err.message);
+          }
         }
       }
     }
 
     if (!purchaseDetails) {
-      return res.status(404).json({
-        error: `Não conseguimos consultar o edital no PNCP diretamente. Detalhes: ${fetchErrorMsg}. Certifique-se de que o ID de contratação ${cnpj}-${ano}-${sequencial} realmente existe e está homologado/publicado.`
+      console.error(`[PNCP Direct API] Falha na importação do PNCP para CNPJ ${cnpj}, Ano ${ano}, Seq ${sequencial}: ${fetchErrorMsg}`);
+      return res.status(502).json({
+        error: `Não foi possível obter os detalhes da contratação no portal do PNCP: ${fetchErrorMsg}. Verifique os dados digitados ou tente novamente mais tarde.`
       });
     }
 
@@ -551,7 +727,6 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
     let predictedCompetitors: string[] = ["Distribuidor Nacional S.A.", "GovTech Logística Ltda"];
 
     // 4. Optionally, feed into Gemini for AI Enhancement
-    let isMock = false;
     let aiUsage = null;
     let runAI = runAIEnhance && isGeminiConfigured;
 
@@ -684,39 +859,6 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     const start = dataInicial ? (dataInicial as string).replace(/-/g, "") : formatDate(pastDate);
     const end = dataFinal ? (dataFinal as string).replace(/-/g, "") : formatDate(today);
 
-    // Default to Pregão (6) if no modality or 'Todos' is specified to meet the mandatory PNCP API parameter
-    const modalidadeCode = (codigoModalidade && String(codigoModalidade) !== "Todos" && String(codigoModalidade) !== "")
-      ? String(codigoModalidade)
-      : "6";
-
-    // Build base URL without page parameters
-    let baseSearchUrl = `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?dataInicial=${start}&dataFinal=${end}&tamanhoPagina=50`;
-    if (uf && String(uf) !== "Todos" && String(uf) !== "") {
-      baseSearchUrl += `&uf=${String(uf)}`;
-    }
-    baseSearchUrl += `&codigoModalidadeContratacao=${modalidadeCode}`;
-
-    // 1. Fetch metadata first (page 1) to find total records & pages
-    const metadataUrl = `${baseSearchUrl}&pagina=1`;
-    console.log(`[PNCP Search Backend] Requisitando Metadados URL: ${metadataUrl}`);
-
-    const metaRes = await fetch(metadataUrl, {
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0"
-      }
-    });
-
-    if (!metaRes.ok) {
-      throw new Error(`PNCP principal retornou código de status HTTP ${metaRes.status}`);
-    }
-
-    const metaData = await metaRes.json();
-    const totalRecords = metaData.totalRegistros || 0;
-    const totalPages = metaData.totalPaginas || 1;
-
-    let items: any[] = [];
-
     // Helper to normalize the text ignoring case and Portuguese accents for fuzzy search
     const cleanStringForSearch = (str: string): string => {
       return (str || "")
@@ -726,98 +868,166 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         .trim();
     };
 
-    // If there is only 1 page, we just use the current page data directly (it's already the newest and oldest combined)
-    if (totalPages <= 1) {
-      items = metaData.data || [];
-    } else {
-      // Reversing pagination scale!
-      // Since the API returns oldest-first, User Page 1 should fetch the LAST page (totalPages).
-      // User Page 2 should fetch second-to-last page (totalPages - 1), and so on.
-      const backendPage = Math.max(1, totalPages - (page - 1));
+    const isAllModalities = !codigoModalidade || String(codigoModalidade) === "Todos" || String(codigoModalidade) === "";
+    const activeModalityCodes = isAllModalities ? [null] : [String(codigoModalidade)];
 
-      // If a search term is specified, we fetch multiple pages in parallel to scan a larger set (up to 500 records)
-      if (termo && String(termo).trim().length > 0) {
-        const pagesToFetch: number[] = [];
-        // Scan starting from backendPage down to 9 pages prior
-        const startPage = backendPage;
-        for (let i = 0; i < 10; i++) {
-          const pToGet = startPage - i;
-          if (pToGet >= 1 && pToGet <= totalPages) {
-            pagesToFetch.push(pToGet);
-          }
-        }
+    let items: any[] = [];
+    let totalRecords = 0;
 
-        console.log(`[PNCP Deep Search Backend] Fetching ${pagesToFetch.length} pages in parallel to find "${termo}"...`);
+    console.log(`[PNCP Search Backend] Query: Termo="${termo}", UF="${uf}", Modality="${codigoModalidade}" (Active: ${isAllModalities ? "Todas" : codigoModalidade}), Page=${page}, Range=${start} to ${end}`);
+
+    // Helper to fetch JSON from PNCP with individual timeouts and built-in retries
+    const fetchPncpJson = async (url: string, maxRetries = 1, timeout = 15000, delay = 100): Promise<any> => {
+      let lastErr: any = null;
+      for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout); // customized timeout to fail-fast
         
         try {
-          const fetchPromises = pagesToFetch.map(async (pNum) => {
-            const pageUrl = `${baseSearchUrl}&pagina=${pNum}`;
-            const pageRes = await fetch(pageUrl, {
-              headers: {
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0"
-              }
-            });
-            if (pageRes.ok) {
-              const pageData = await pageRes.json();
-              return pageData.data || [];
-            }
-            return [];
-          });
-
-          const resultsArray = await Promise.all(fetchPromises);
-          items = resultsArray.flat();
-        } catch (err) {
-          console.error("[PNCP Deep Search Parallel Fetch failed]:", err);
-          items = metaData.data || [];
-        }
-      } else {
-        // Standard non-term pagination (just 1 page)
-        if (backendPage >= 1 && backendPage <= totalPages) {
-          const pageUrl = `${baseSearchUrl}&pagina=${backendPage}`;
-          console.log(`[PNCP Search Backend] Requisitando Página Inversa ${backendPage}/${totalPages} URL: ${pageUrl}`);
-
-          const pageRes = await fetch(pageUrl, {
+          const response = await fetch(url, {
             headers: {
               "Accept": "application/json",
-              "User-Agent": "Mozilla/5.0"
-            }
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            },
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
 
-          if (pageRes.ok) {
-            const pageData = await pageRes.json();
-            items = pageData.data || [];
-
-            // Fetch previous page too if items are too few
-            if (items.length < 25 && backendPage > 1) {
-              const prevPageUrl = `${baseSearchUrl}&pagina=${backendPage - 1}`;
-              const prevRes = await fetch(prevPageUrl, {
-                headers: {
-                  "Accept": "application/json",
-                  "User-Agent": "Mozilla/5.0"
-                }
-              });
-              if (prevRes.ok) {
-                const prevData = await prevRes.json();
-                const prevItems = prevData.data || [];
-                items = [...items, ...prevItems];
-              }
-            }
-          } else {
-            items = metaData.data || [];
+          if (response.ok) {
+            return await response.json();
           }
+
+          console.log(`[PNCP Connection] Attempt ${attempt} lookup status: ${response.status}`);
+          lastErr = new Error(`HTTP status ${response.status}`);
+        } catch (err: any) {
+          clearTimeout(timeoutId);
+          console.log(`[PNCP Connection] Attempt ${attempt} status: ${err.message}`);
+          lastErr = err;
+        }
+
+        if (attempt <= maxRetries) {
+          // Wait with brief backoff before retrying
+          await new Promise(resolve => setTimeout(resolve, delay * attempt));
         }
       }
-    }
+      throw lastErr || new Error("Failed to fetch PNCP data");
+    };
 
-    // 1. Sort by dataAtualizacao descending (Latest updated first, exactly matching current PNCP Portal behavior)
+    // Helper to fetch from multiple hosts (dadosabertos vs standard portal) to avoid cloud/hosting IP level blocks
+    const fetchPncpWithHostFallback = async (queryParams: string, maxRetries = 0, timeout = 3500, delay = 50): Promise<any> => {
+      const hosts = [
+        "https://dadosabertos.pncp.gov.br",
+        "https://pncp.gov.br"
+      ];
+      let lastErr: any = null;
+      for (const host of hosts) {
+        const fullUrl = `${host}/api/consulta/v1/contratacoes/publicacao?${queryParams}`;
+        try {
+          console.log(`[PNCP Connection] Trying lookup via host: ${host}`);
+          const data = await fetchPncpJson(fullUrl, maxRetries, timeout, delay);
+          return data;
+        } catch (err: any) {
+          console.warn(`[PNCP Connection] Host fallback warning on ${host}:`, err.message);
+          lastErr = err;
+        }
+      }
+      throw lastErr || new Error("PNCP API search failed on all primary and secondary hosts.");
+    };
+
+    // Parallel fetch over selected modality codes to prevent sequential blocking/hanging
+    const results = await Promise.all(
+      activeModalityCodes.map(async (mCode) => {
+        let mItems: any[] = [];
+        let mTotalRecords = 0;
+
+        try {
+          let queryParams = `dataInicial=${start}&dataFinal=${end}&tamanhoPagina=50`;
+          if (mCode) {
+            queryParams += `&codigoModalidadeContratacao=${mCode}`;
+          }
+          if (uf && String(uf) !== "Todos" && String(uf) !== "") {
+            queryParams += `&uf=${String(uf)}`;
+          }
+
+          // 1. Fetch metadata/page 1 with fast fallback (3.5s timeout)
+          const metaData = await fetchPncpWithHostFallback(`${queryParams}&pagina=1`, 0, 3500, 50);
+
+          mTotalRecords = metaData.totalRegistros || 0;
+          const mTotalPages = metaData.totalPaginas || 1;
+          mItems = metaData.data || [];
+
+          // If there is a search term, we scour a limited set of recent pages (newest)
+          if (termo && String(termo).trim().length > 0 && mTotalPages > 1) {
+            const pagesToFetchLimit = isAllModalities ? 2 : 4;
+            const pagesToFetch: number[] = [];
+            const startPage = mTotalPages;
+            for (let i = 0; i < pagesToFetchLimit; i++) {
+              const pToGet = startPage - i;
+              if (pToGet > 1 && pToGet <= mTotalPages) {
+                pagesToFetch.push(pToGet);
+              }
+            }
+
+            // Fetch secondary pages in parallel with fast fallback
+            const pageDataResults = await Promise.all(
+              pagesToFetch.map(async (pNum) => {
+                try {
+                  const pageData = await fetchPncpWithHostFallback(`${queryParams}&pagina=${pNum}`, 0, 3500, 50);
+                  return pageData.data || [];
+                } catch (err: any) {
+                  console.log(`[PNCP Connection] Secondary page query for Modality ${mCode || "All"} Page ${pNum}: ${err.message}`);
+                  return [];
+                }
+              })
+            );
+
+            pageDataResults.forEach((pItems) => {
+              mItems.push(...pItems);
+            });
+          } else if (page > 1) {
+            // Standard non-term pagination (just fetch the inverted requested page)
+            const backendPage = Math.max(1, mTotalPages - (page - 1));
+            if (backendPage !== 1 && backendPage <= mTotalPages) {
+              try {
+                const pageData = await fetchPncpWithHostFallback(`${queryParams}&pagina=${backendPage}`, 0, 3500, 50);
+                mItems = pageData.data || [];
+              } catch (pageErr: any) {
+                console.log(`[PNCP Connection] Secondary page query fallback to page 1 for modality ${mCode || "All"}: ${pageErr.message}`);
+              }
+            }
+          }
+        } catch (err: any) {
+          console.warn(`[PNCP Connection] Falha na consulta de modalidade ${mCode || "Todas"}:`, err.message);
+          throw err;
+        }
+
+        return { items: mItems, total: mTotalRecords };
+      })
+    );
+
+    // Combine results from all parallel executions
+    results.forEach((res) => {
+      items.push(...res.items);
+      totalRecords += res.total;
+    });
+
+    // Remove duplicates by ID (numeroControlePNCP) to ensure pristine results
+    const seen = new Set<string>();
+    items = items.filter((item) => {
+      const id = item.numeroControlePNCP || item.id;
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    // 1. Sort by dataAtualizacao descending (Latest updated first, matching PNCP Portal)
     items.sort((a: any, b: any) => {
       const dateA = new Date(a.dataAtualizacao || a.dataAtualizacaoGlobal || a.dataPublicacaoPncp || a.dataInclusao || 0).getTime();
       const dateB = new Date(b.dataAtualizacao || b.dataAtualizacaoGlobal || b.dataPublicacaoPncp || b.dataInclusao || 0).getTime();
       return dateB - dateA;
     });
 
-    // 2. Filter by keyword (termo) if specified (since external PNCP ignores the query parameter)
+    // 2. Filter by keyword (termo) if specified (since external PNCP ignores query parameters)
     if (termo && String(termo).trim().length > 0) {
       const keyword = cleanStringForSearch(String(termo));
       items = items.filter((item: any) => {
@@ -830,9 +1040,13 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     }
 
     // 3. Slice items for pagination (max 15 per page)
-    const totalRecordsAdjusted = termo ? items.length : totalRecords;
-    const totalPagesAdjusted = termo ? Math.max(1, Math.ceil(items.length / pageSize)) : totalPages;
-    const slicedItems = items.slice(0, pageSize);
+    const totalRecordsAdjusted = (termo || isAllModalities) ? items.length : totalRecords;
+    const totalPagesAdjusted = (termo || isAllModalities) ? Math.max(1, Math.ceil(items.length / pageSize)) : Math.ceil(totalRecords / pageSize);
+    
+    // Slice corresponding page items
+    const startIdx = (page - 1) * pageSize;
+    const endIdx = page * pageSize;
+    const slicedItems = items.slice(startIdx, endIdx);
 
     res.json({
       success: true,
@@ -842,7 +1056,8 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         totalPaginas: totalPagesAdjusted,
         numeroPagina: page,
         paginasRestantes: Math.max(0, totalPagesAdjusted - page),
-        empty: slicedItems.length === 0
+        empty: slicedItems.length === 0,
+        isMock: false
       }
     });
   } catch (err: any) {
