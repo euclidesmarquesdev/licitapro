@@ -145,76 +145,54 @@ export default function RastreadorPncp({
         termo: termToUse
       });
 
+      const directParams = new URLSearchParams({
+        dataInicial: dates.start.replace(/-/g, ""),
+        dataFinal: dates.end.replace(/-/g, ""),
+        pagina: String(pageToFetch),
+        tamanhoPagina: termToUse && termToUse.trim().length > 0 ? "100" : "15"
+      });
+
+      if (selectedModality && selectedModality !== "Todos" && selectedModality !== "") {
+        directParams.append("codigoModalidadeContratacao", selectedModality);
+      }
+      if (selectedUf && selectedUf !== "Todos" && selectedUf !== "") {
+        directParams.append("uf", selectedUf);
+      }
+
+      const directUrls = [
+        `https://api.pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`,
+        `https://dadosabertos.pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`,
+        `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`
+      ];
+
+      let directRawData: any = null;
+      let lastDirectErr: any = null;
+
+      // 1. Try direct browser call first (incredibly fast because the user is not inside a blocked cloud range, and api.pncp.gov.br supports CORS)
+      for (const url of directUrls) {
+        try {
+          console.log(`[PNCP Client] Tentando conexão direta para: ${url}`);
+          const directRes = await fetch(url, {
+            headers: {
+              "Accept": "application/json"
+            }
+          });
+          if (directRes.ok) {
+            directRawData = await directRes.json();
+            console.log("[PNCP Client] Conexão direta realizada com sucesso usando url:", url);
+            break;
+          } else {
+            lastDirectErr = new Error(`HTTP ${directRes.status}`);
+          }
+        } catch (err: any) {
+          console.warn(`[PNCP Client] Falha de conexão direta na URL ${url}:`, err.message);
+          lastDirectErr = err;
+        }
+      }
+
       let data: any;
 
-      try {
-        const response = await fetch(`/api/pncp/search?${params.toString()}`, {
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
-        });
-
-        const textResponse = await response.text();
-        if (response.ok) {
-          data = JSON.parse(textResponse);
-        } else {
-          try {
-            const parsedErr = JSON.parse(textResponse);
-            throw new Error(parsedErr.error || `Servidor de busca retornou erro ${response.status}`);
-          } catch (e: any) {
-            throw new Error(e.message || `Servidor de busca retornou erro ${response.status}`);
-          }
-        }
-      } catch (backendErr: any) {
-        console.warn("[PNCP Client] Falha na busca pelo backend (bloqueio de nuvem GCP). Tentando conexão direta do navegador para PNCP...", backendErr.message);
-        
-        const directParams = new URLSearchParams({
-          dataInicial: dates.start,
-          dataFinal: dates.end,
-          tamanhoPagina: "50",
-          pagina: String(pageToFetch)
-        });
-
-        if (selectedModality && selectedModality !== "Todos" && selectedModality !== "") {
-          directParams.append("codigoModalidadeContratacao", selectedModality);
-        }
-        if (selectedUf && selectedUf !== "Todos" && selectedUf !== "") {
-          directParams.append("uf", selectedUf);
-        }
-
-        const directUrls = [
-          `https://dadosabertos.pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`,
-          `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`
-        ];
-
-        let directRawData: any = null;
-        let lastDirectErr: any = null;
-
-        for (const url of directUrls) {
-          try {
-            console.log(`[PNCP Client] Tentando conexão direta para: ${url}`);
-            const directRes = await fetch(url, {
-              headers: {
-                "Accept": "application/json"
-              }
-            });
-            if (directRes.ok) {
-              directRawData = await directRes.json();
-              console.log("[PNCP Client] Conexão direta com sucesso usando origin:", url);
-              break;
-            } else {
-              lastDirectErr = new Error(`HTTP ${directRes.status}`);
-            }
-          } catch (err: any) {
-            console.warn(`[PNCP Client] Falha de conexão na URL ${url}:`, err.message);
-            lastDirectErr = err;
-          }
-        }
-
-        if (!directRawData) {
-          throw new Error(`Falha de conexão com o PNCP Governamental (Erro: ${lastDirectErr?.message || "Servidor indetectável"}). O portal nacional de compras públicas pode estar fora do ar ou bloqueando conexões directas.`);
-        }
-
+      if (directRawData) {
         let rawList = directRawData.data || [];
 
         // Apply client-side keyword filtering matching the backend strategy
@@ -238,6 +216,26 @@ export default function RastreadorPncp({
             isMock: false
           }
         };
+      } else {
+        // 2. Fallback to our backend server search proxy if direct browser request fails completely
+        console.warn("[PNCP Client] Conexão direta falhou. Utilizando proxy do backend LicitaPro...");
+        const response = await fetch(`/api/pncp/search?${params.toString()}`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+
+        const textResponse = await response.text();
+        if (response.ok) {
+          data = JSON.parse(textResponse);
+        } else {
+          try {
+            const parsedErr = JSON.parse(textResponse);
+            throw new Error(parsedErr.error || `Servidor de busca retornou erro ${response.status}`);
+          } catch (e: any) {
+            throw new Error(e.message || `Servidor de busca retornou erro ${response.status}`);
+          }
+        }
       }
 
       if (data.success && data.data) {

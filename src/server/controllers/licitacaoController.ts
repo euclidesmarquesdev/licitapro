@@ -795,6 +795,8 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
     } else {
       // Try both portals with the new API endpoint structure for details (api/consulta/v1) and legacy fallback
       const detailUrls = [
+        `https://api.pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
+        `https://api.pncp.gov.br/api/pncp/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
         `https://pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
         `https://dadosabertos.pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
         `https://pncp.gov.br/api/pncp/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
@@ -803,7 +805,7 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
 
       for (const url of detailUrls) {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000); // Fail-fast with 2-second timeout per URL
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // Robust 10-second timeout per URL to handle typical government API sluggishness safely
         try {
           console.log(`[PNCP Direct API] Consultando detalhes do edital na URL: ${url}`);
           const detailsRes = await fetch(url, {
@@ -831,6 +833,7 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
       if (purchaseDetails) {
         // Items and Files are still located under api/pncp/v1/
         const apiPncpBaseUrls = [
+          "https://api.pncp.gov.br/api/pncp/v1",
           "https://pncp.gov.br/api/pncp/v1",
           "https://dadosabertos.pncp.gov.br/api/pncp/v1"
         ];
@@ -840,9 +843,9 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
             console.log(`[PNCP Direct API] Consultando itens/arquivos na URL base: ${apiBase}`);
             
             const controllerItems = new AbortController();
-            const timeoutIdItems = setTimeout(() => controllerItems.abort(), 2000);
+            const timeoutIdItems = setTimeout(() => controllerItems.abort(), 10000); // Generous 10-second timeout to handle large items payload safely
             const controllerFiles = new AbortController();
-            const timeoutIdFiles = setTimeout(() => controllerFiles.abort(), 2000);
+            const timeoutIdFiles = setTimeout(() => controllerFiles.abort(), 10000); // Generous 10-second timeout for files list metadata download
 
             const [itemsRes, filesRes] = await Promise.all([
               fetch(`${apiBase}/orgaos/${cnpj}/compras/${ano}/${sequencial}/itens?pagina=1&tamanhoPagina=500`, {
@@ -875,56 +878,11 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
       }
     }
 
-    // Ativar importação auxiliar de contingência de forma transparente caso a consulta oficial ao PNCP externa falhe!
+    // Se os detalhes do edital não puderem ser consultados diretamente no portal PNCP, lançar erro informando o usuário, conforme solicitado
     if (!purchaseDetails) {
-      console.warn(`[PNCP Direct API] Falha na importação real do PNCP externa (${fetchErrorMsg || "offline"}). Ativando modo de segurança de contingência LicitaPro.`);
-      isMock = true;
-
-      // Encontrar se o CNPJ coincide com algum item de CONTINGENCY_PNCP_DATA
-      const matched = CONTINGENCY_PNCP_DATA.find(item => item.orgaoEntidade.cnpj === cnpj && String(item.numeroCompra) === sequencial) || CONTINGENCY_PNCP_DATA.find(item => item.orgaoEntidade.cnpj === cnpj) || CONTINGENCY_PNCP_DATA[0];
-
-      purchaseDetails = {
-        numeroControlePNCP: `${cnpj}-2-${sequencial.padStart(6, "0")}-${ano}`,
-        modalidadeNome: matched.modalidadeNome,
-        modalidadeContratacao: matched.modalidadeContratacao,
-        objetoCompra: matched.objetoCompra,
-        valorTotalEstimado: matched.valorEstimado,
-        numeroCompra: sequencial,
-        anoCompra: parseInt(ano),
-        srp: matched.srp,
-        orgaoEntidade: matched.orgaoEntidade,
-        unidadeOrgao: matched.unidadeOrgao,
-        dataAberturaSessaoPublica: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
-        dataEnvio: new Date().toISOString(),
-        amparoLegal: { descricao: "Artigo 75, Inciso II da Lei Federal Nº 14.133/2021" }
-      };
-
-      itemsList = [
-        {
-          numeroItem: 1,
-          descricao: "Lote Geral - Suprimentos corporativos qualificados",
-          quantidade: 1,
-          valorUnitarioEstimado: matched.valorEstimado,
-          valorTotal: matched.valorEstimado
-        }
-      ];
-
-      filesList = [
-        {
-          sequencialArquivo: 1,
-          nomeOriginal: "Edital_Oficial_Importado_Unificado.pdf",
-          tipoDocumentoNome: "Edital de Licitação",
-          tamanho: 1420104,
-          link: "https://pncp.gov.br/app/editais?pagina=1"
-        },
-        {
-          sequencialArquivo: 2,
-          nomeOriginal: "Termo_de_Referencia_Anexo_I.pdf",
-          tipoDocumentoNome: "Termo de Referência (TR)",
-          tamanho: 2841021,
-          link: "https://pncp.gov.br/app/editais?pagina=1"
-        }
-      ];
+      return res.status(404).json({
+        error: `Não foi possível obter detalhes deste edital diretamente do PNCP. Erro interno: ${fetchErrorMsg || "O portal do PNCP encontra-se indisponível ou bloqueando a requisição."}`
+      });
     }
 
     // Map to standardized fields
@@ -1167,6 +1125,7 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     }
 
     const hosts = [
+      "https://api.pncp.gov.br",
       "https://dadosabertos.pncp.gov.br",
       "https://pncp.gov.br"
     ];
@@ -1176,14 +1135,18 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
 
     for (const host of hosts) {
       const url = `${host}/api/consulta/v1/contratacoes/publicacao?${params.toString()}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // Generous 12-second timeout to accommodate PNCP API sluggishness and prevent early AbortErrors
       try {
         console.log(`[PNCP Simple Search] Fetching from ${url}`);
         const response = await fetch(url, {
           headers: {
             "Accept": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-          }
+          },
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
         if (response.ok) {
           apiData = await response.json();
           break;
@@ -1191,6 +1154,7 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
           fetchError = new Error(`PNCP returned status ${response.status}`);
         }
       } catch (err: any) {
+        clearTimeout(timeoutId);
         fetchError = err;
       }
     }
