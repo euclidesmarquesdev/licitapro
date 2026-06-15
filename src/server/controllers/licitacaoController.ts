@@ -1137,10 +1137,10 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
   const pageSize = 15;
 
   try {
-    // Use a wider default window (60 days) to find many open tenders
     const today = new Date();
     const pastDate = new Date();
-    pastDate.setDate(today.getDate() - 60);
+    // Default to a 30-day window to keep responses fast
+    pastDate.setDate(today.getDate() - 30);
 
     const formatDate = (date: Date) => {
       const y = date.getFullYear();
@@ -1152,263 +1152,108 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     const start = dataInicial ? (dataInicial as string).replace(/-/g, "") : formatDate(pastDate);
     const end = dataFinal ? (dataFinal as string).replace(/-/g, "") : formatDate(today);
 
-    // Helper to normalize the text ignoring case and Portuguese accents for fuzzy search
-    const cleanStringForSearch = (str: string): string => {
-      return (str || "")
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim();
-    };
+    // Build the query parameter string for PNCP
+    const params = new URLSearchParams();
+    params.append("dataInicial", start);
+    params.append("dataFinal", end);
+    params.append("pagina", String(page));
+    params.append("tamanhoPagina", termo ? "100" : String(pageSize));
 
-    const isAllModalities = !codigoModalidade || String(codigoModalidade) === "Todos" || String(codigoModalidade) === "";
-    const activeModalityCodes = isAllModalities ? [null] : [String(codigoModalidade)];
+    if (uf && String(uf) !== "Todos" && String(uf) !== "") {
+      params.append("uf", String(uf));
+    }
+    if (codigoModalidade && String(codigoModalidade) !== "Todos" && String(codigoModalidade) !== "") {
+      params.append("codigoModalidadeContratacao", String(codigoModalidade));
+    }
 
-    let items: any[] = [];
-    let totalRecords = 0;
+    const hosts = [
+      "https://dadosabertos.pncp.gov.br",
+      "https://pncp.gov.br"
+    ];
 
-    console.log(`[PNCP Search Backend] Query: Termo="${termo}", UF="${uf}", Modality="${codigoModalidade}" (Active: ${isAllModalities ? "Todas" : codigoModalidade}), Page=${page}, Range=${start} to ${end}`);
+    let apiData: any = null;
+    let fetchError: any = null;
 
-    // Helper to fetch JSON from PNCP with individual timeouts and built-in retries
-    const fetchPncpJson = async (url: string, maxRetries = 1, timeout = 15000, delay = 100): Promise<any> => {
-      let lastErr: any = null;
-      for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout); // customized timeout to fail-fast
-        
-        try {
-          const response = await fetch(url, {
-            headers: {
-              "Accept": "application/json",
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            },
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            return await response.json();
+    for (const host of hosts) {
+      const url = `${host}/api/consulta/v1/contratacoes/publicacao?${params.toString()}`;
+      try {
+        console.log(`[PNCP Simple Search] Fetching from ${url}`);
+        const response = await fetch(url, {
+          headers: {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
           }
-
-          console.log(`[PNCP Connection] Attempt ${attempt} lookup status: ${response.status}`);
-          lastErr = new Error(`HTTP status ${response.status}`);
-        } catch (err: any) {
-          clearTimeout(timeoutId);
-          console.log(`[PNCP Connection] Attempt ${attempt} status: ${err.message}`);
-          lastErr = err;
+        });
+        if (response.ok) {
+          apiData = await response.json();
+          break;
+        } else {
+          fetchError = new Error(`PNCP returned status ${response.status}`);
         }
-
-        if (attempt <= maxRetries) {
-          // Wait with brief backoff before retrying
-          await new Promise(resolve => setTimeout(resolve, delay * attempt));
-        }
+      } catch (err: any) {
+        fetchError = err;
       }
-      throw lastErr || new Error("Failed to fetch PNCP data");
-    };
+    }
 
-    // Helper to fetch from multiple hosts (dadosabertos vs standard portal) to avoid cloud/hosting IP level blocks
-    const fetchPncpWithHostFallback = async (queryParams: string, maxRetries = 0, timeout = 3500, delay = 50): Promise<any> => {
-      const hosts = [
-        "https://dadosabertos.pncp.gov.br",
-        "https://pncp.gov.br"
-      ];
-      let lastErr: any = null;
-      for (const host of hosts) {
-        const fullUrl = `${host}/api/consulta/v1/contratacoes/publicacao?${queryParams}`;
-        try {
-          console.log(`[PNCP Connection] Trying lookup via host: ${host}`);
-          const data = await fetchPncpJson(fullUrl, maxRetries, timeout, delay);
-          return data;
-        } catch (err: any) {
-          console.warn(`[PNCP Connection] Host fallback warning on ${host}:`, err.message);
-          lastErr = err;
-        }
-      }
-      throw lastErr || new Error("PNCP API search failed on all primary and secondary hosts.");
-    };
+    if (!apiData) {
+      throw fetchError || new Error("Não foi possível conectar às APIs do PNCP.");
+    }
 
-    // Parallel fetch over selected modality codes to prevent sequential blocking/hanging
-    const results = await Promise.all(
-      activeModalityCodes.map(async (mCode) => {
-        let mItems: any[] = [];
-        let mTotalRecords = 0;
+    let items = apiData.data || [];
 
-        try {
-          let queryParams = `dataInicial=${start}&dataFinal=${end}&tamanhoPagina=50`;
-          if (mCode) {
-            queryParams += `&codigoModalidadeContratacao=${mCode}`;
-          }
-          if (uf && String(uf) !== "Todos" && String(uf) !== "") {
-            queryParams += `&uf=${String(uf)}`;
-          }
-
-          // 1. Fetch metadata/page 1 with fast fallback (3.5s timeout)
-          const metaData = await fetchPncpWithHostFallback(`${queryParams}&pagina=1`, 0, 3500, 50);
-
-          mTotalRecords = metaData.totalRegistros || 0;
-          const mTotalPages = metaData.totalPaginas || 1;
-          mItems = metaData.data || [];
-
-          // If there is a search term, we scour a limited set of recent pages (newest)
-          if (termo && String(termo).trim().length > 0 && mTotalPages > 1) {
-            const pagesToFetchLimit = isAllModalities ? 2 : 4;
-            const pagesToFetch: number[] = [];
-            const startPage = mTotalPages;
-            for (let i = 0; i < pagesToFetchLimit; i++) {
-              const pToGet = startPage - i;
-              if (pToGet > 1 && pToGet <= mTotalPages) {
-                pagesToFetch.push(pToGet);
-              }
-            }
-
-            // Fetch secondary pages in parallel with fast fallback
-            const pageDataResults = await Promise.all(
-              pagesToFetch.map(async (pNum) => {
-                try {
-                   const pageData = await fetchPncpWithHostFallback(`${queryParams}&pagina=${pNum}`, 0, 3500, 50);
-                   return pageData.data || [];
-                } catch (err: any) {
-                   console.log(`[PNCP Connection] Secondary page query for Modality ${mCode || "All"} Page ${pNum}: ${err.message}`);
-                   return [];
-                }
-              })
-            );
-
-            pageDataResults.forEach((pItems) => {
-              mItems.push(...pItems);
-            });
-          } else if (page > 1) {
-            // Standard non-term pagination (just fetch the inverted requested page)
-            const backendPage = Math.max(1, mTotalPages - (page - 1));
-            if (backendPage !== 1 && backendPage <= mTotalPages) {
-              try {
-                const pageData = await fetchPncpWithHostFallback(`${queryParams}&pagina=${backendPage}`, 0, 3500, 50);
-                mItems = pageData.data || [];
-              } catch (pageErr: any) {
-                console.log(`[PNCP Connection] Secondary page query fallback to page 1 for modality ${mCode || "All"}: ${pageErr.message}`);
-              }
-            }
-          }
-        } catch (err: any) {
-          console.warn(`[PNCP Connection] Falha na consulta de modalidade ${mCode || "Todas"}:`, err.message);
-          throw err;
-        }
-
-        return { items: mItems, total: mTotalRecords };
-      })
-    );
-
-    // Combine results from all parallel executions
-    results.forEach((res) => {
-      items.push(...res.items);
-      totalRecords += res.total;
-    });
-
-    // Remove duplicates by ID (numeroControlePNCP) to ensure pristine results
-    const seen = new Set<string>();
-    items = items.filter((item) => {
-      const id = item.numeroControlePNCP || item.id;
-      if (!id || seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
-
-    // 1. Sort by dataAtualizacao descending (Latest updated first, matching PNCP Portal)
+    // Prioritize newest recordings first (descending by publication date)
     items.sort((a: any, b: any) => {
-      const dateA = new Date(a.dataAtualizacao || a.dataAtualizacaoGlobal || a.dataPublicacaoPncp || a.dataInclusao || 0).getTime();
-      const dateB = new Date(b.dataAtualizacao || b.dataAtualizacaoGlobal || b.dataPublicacaoPncp || b.dataInclusao || 0).getTime();
+      const dateA = new Date(a.dataAtualizacao || a.dataPublicacaoPncp || 0).getTime();
+      const dateB = new Date(b.dataAtualizacao || b.dataPublicacaoPncp || 0).getTime();
       return dateB - dateA;
     });
 
-    // 2. Filter by keyword (termo) if specified (since external PNCP ignores query parameters)
+    // Filter by keyword (termo) if provided, since official API does not support search term parameter
     if (termo && String(termo).trim().length > 0) {
-      const keyword = cleanStringForSearch(String(termo));
+      const cleanKeyword = (str: string) => (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const keyword = cleanKeyword(String(termo));
       items = items.filter((item: any) => {
-        const orgaoName = cleanStringForSearch(item.orgaoEntidade?.razaoSocial || "");
-        const objeto = cleanStringForSearch(item.objetoCompra || item.objeto || "");
-        const numPncp = cleanStringForSearch(item.numeroControlePNCP || "");
-        const modalidadeName = cleanStringForSearch(item.modalidadeNome || "");
+        const orgaoName = cleanKeyword(item.orgaoEntidade?.razaoSocial || "");
+        const objeto = cleanKeyword(item.objetoCompra || item.objeto || "");
+        const numPncp = cleanKeyword(item.numeroControlePNCP || "");
+        const modalidadeName = cleanKeyword(item.modalidadeNome || "");
         return orgaoName.includes(keyword) || objeto.includes(keyword) || numPncp.includes(keyword) || modalidadeName.includes(keyword);
       });
-    }
-
-    // 3. Slice items for pagination (max 15 per page)
-    const totalRecordsAdjusted = (termo || isAllModalities) ? items.length : totalRecords;
-    const totalPagesAdjusted = (termo || isAllModalities) ? Math.max(1, Math.ceil(items.length / pageSize)) : Math.ceil(totalRecords / pageSize);
-    
-    // Slice corresponding page items
-    const startIdx = (page - 1) * pageSize;
-    const endIdx = page * pageSize;
-    const slicedItems = items.slice(startIdx, endIdx);
-
-    res.json({
-      success: true,
-      data: {
-        data: slicedItems,
-        totalRegistros: totalRecordsAdjusted,
-        totalPaginas: totalPagesAdjusted,
-        numeroPagina: page,
-        paginasRestantes: Math.max(0, totalPagesAdjusted - page),
-        empty: slicedItems.length === 0,
-        isMock: false
-      }
-    });
-  } catch (err: any) {
-    console.warn("[PNCP Search Backend] Conexão oficial PNCP indisponível ou offline. Acionando fallback resiliente LicitaPro.", err.message);
-
-    // Filtragem sutil e local sobre CONTINGENCY_PNCP_DATA para garantir 100% de disponibilidade
-    const cleanStringForSearch = (str: string): string => {
-      return (str || "")
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim();
-    };
-
-    let filtered = [...CONTINGENCY_PNCP_DATA];
-
-    // 1. Filtrar por UF
-    if (uf && String(uf) !== "Todos" && String(uf) !== "") {
-      filtered = filtered.filter(item => item.unidadeOrgao?.ufSigla === String(uf));
-    }
-
-    // 2. Filtrar por Modalidade
-    if (codigoModalidade && String(codigoModalidade) !== "Todos" && String(codigoModalidade) !== "") {
-      filtered = filtered.filter(item => item.modalidadeContratacao === String(codigoModalidade));
-    }
-
-    // 3. Filtrar por palavra-chave (termo)
-    if (termo && String(termo).trim().length > 0) {
-      const keyword = cleanStringForSearch(String(termo));
-      filtered = filtered.filter(item => {
-        const orgaoName = cleanStringForSearch(item.orgaoEntidade?.razaoSocial || "");
-        const objeto = cleanStringForSearch(item.objetoCompra || "");
-        const numPncp = cleanStringForSearch(item.numeroControlePNCP || "");
-        return orgaoName.includes(keyword) || objeto.includes(keyword) || numPncp.includes(keyword);
+      
+      // Page locally for keyword filters
+      const startIdx = (page - 1) * pageSize;
+      const sliced = items.slice(startIdx, startIdx + pageSize);
+      
+      res.json({
+        success: true,
+        data: {
+          data: sliced,
+          totalRegistros: items.length,
+          totalPaginas: Math.max(1, Math.ceil(items.length / pageSize)),
+          numeroPagina: page,
+          paginasRestantes: Math.max(0, Math.ceil(items.length / pageSize) - page),
+          empty: sliced.length === 0,
+          isMock: false
+        }
+      });
+    } else {
+      // Direct pagination from the API
+      res.json({
+        success: true,
+        data: {
+          data: items,
+          totalRegistros: apiData.totalRegistros || items.length,
+          totalPaginas: apiData.totalPaginas || 1,
+          numeroPagina: page,
+          paginasRestantes: Math.max(0, (apiData.totalPaginas || 1) - page),
+          empty: items.length === 0,
+          isMock: false
+        }
       });
     }
 
-    // Ordenar de forma inversa para simular dados mais recentes primeiro
-    filtered.sort((a, b) => b.numeroControlePNCP.localeCompare(a.numeroControlePNCP));
-
-    const totalRecordsAdjusted = filtered.length;
-    const totalPagesAdjusted = Math.max(1, Math.ceil(filtered.length / pageSize));
-    
-    const startIdx = (page - 1) * pageSize;
-    const endIdx = page * pageSize;
-    const slicedItems = filtered.slice(startIdx, endIdx);
-
-    res.json({
-      success: true,
-      data: {
-        data: slicedItems,
-        totalRegistros: totalRecordsAdjusted,
-        totalPaginas: totalPagesAdjusted,
-        numeroPagina: page,
-        paginasRestantes: Math.max(0, totalPagesAdjusted - page),
-        empty: slicedItems.length === 0,
-        isMock: true // indica de forma sutil que é contingência ativa
-      }
-    });
+  } catch (err: any) {
+    console.error("[PNCP Simple Search Error]", err);
+    res.status(500).json({ error: "Erro de consulta na API oficial do PNCP: " + err.message });
   }
 }

@@ -777,26 +777,10 @@ export default function RastreadorPncp({
           >
             <ExternalLink className="w-3.5 h-3.5 text-blue-400" /> Acessar Portal Oficial PNCP
           </a>
-          {isOfflineFallback ? (
-            <span className="px-2 py-0.5 bg-amber-500 text-white rounded font-bold font-mono text-[10px] animate-pulse">CONTINGÊNCIA ATIVA</span>
-          ) : (
-            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-bold font-mono text-[10px]">100% Conectado</span>
-          )}
-          <span className="text-slate-400">{isOfflineFallback ? "Servido pelo LicitaPro" : "Portal PNCP Oficial"}</span>
+          <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-bold font-mono text-[10px]">100% Conectado</span>
+          <span className="text-slate-400">Portal PNCP Oficial</span>
         </div>
       </div>
-
-      {isOfflineFallback && (
-        <div className="p-5 bg-amber-50 border border-amber-200 text-amber-950 rounded-2xl flex gap-3.5 shadow-xs">
-          <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5 animate-bounce" />
-          <div className="space-y-1">
-            <h4 className="font-bold text-xs" id="contingency-title">🛡️ Modo Inteligente de Contingência Ativo</h4>
-            <p className="text-xs text-amber-900 leading-relaxed max-w-4xl" id="contingency-text">
-              Detectamos que o Portal Federal do PNCP está temporariamente instável ou bloqueando transações. Para manter sua produtividade ininterrupta e ágil de simulação, o sistema ativou o barramento inteligente de contingência local que responde instantaneamente! Você pode realizar buscas completas por palavras-chave (ex: "computador", "saúde", "engenharia", "merenda"), filtrar Estados e simular importações com IA normalmente.
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Main Grid View list of results */}
       {isLoading ? (
