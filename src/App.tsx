@@ -73,9 +73,9 @@ export default function App() {
   };
 
   // Main dashboard view control
-  const [activeMainView, setActiveMainView] = useState<"editais" | "fornecedores" | "rastreador">("rastreador");
+  const [activeMainView, setActiveMainView] = useState<"editais" | "fornecedores" | "rastreador">("editais");
 
-  // ✅ USA O HOOK usePncpSearch
+  // PNCP Search
   const {
     results: pncpResults,
     setResults: setPncpResults,
@@ -102,10 +102,10 @@ export default function App() {
   const [pncpValorMaximo, setPncpValorMaximo] = useState("");
   const [pncpAIEnhance, setPncpAIEnhance] = useState(true);
 
-  // ✅ REF PARA EVITAR BUSCA DUPLICADA
+  // REF para evitar busca duplicada
   const initialSearchDone = useRef(false);
 
-  // ✅ FUNÇÃO DE BUSCA DO PNCP
+  // FUNÇÃO DE BUSCA DO PNCP
   const handlePncpSearch = async (params: {
     searchTerm: string;
     uf: string;
@@ -118,15 +118,10 @@ export default function App() {
     await pncpSearch(params);
   };
 
-  // ✅ BUSCA INICIAL AUTOMÁTICA (apenas uma vez)
+  // BUSCA INICIAL AUTOMÁTICA (apenas uma vez)
   useEffect(() => {
-    // Aguarda o usuário estar carregado e o componente montado
     if (authLoading) return;
-    
-    // Só executa uma vez
     if (initialSearchDone.current) return;
-    
-    // Se já tem resultados, não busca de novo
     if (pncpHasSearched && pncpResults.length > 0) {
       initialSearchDone.current = true;
       return;
@@ -368,12 +363,10 @@ export default function App() {
           </button>
         </div>
 
-        {activeMainView === "fornecedores" ? (
-          <GeneralSuppliers 
-            licitacoes={licitacoes} 
-            onOpenLicitacao={(id) => setSelectedLicitacaoId(id)} 
-          />
-        ) : activeMainView === "rastreador" ? (
+        {/* ============================================================ */}
+        {/* ABA RASTREADOR PNCP */}
+        {/* ============================================================ */}
+        {activeMainView === "rastreador" && (
           <RastreadorPncp
             licitacoes={licitacoes}
             onSaveNewLicitacao={handleSaveNewLicitacao}
@@ -409,12 +402,162 @@ export default function App() {
             valorMaximo={pncpValorMaximo}
             setValorMaximo={setPncpValorMaximo}
           />
-        ) : (
-          // ... resto do código (editais, filtros, etc)
-          <></>
+        )}
+
+        {/* ============================================================ */}
+        {/* ABA FORNECEDORES */}
+        {/* ============================================================ */}
+        {activeMainView === "fornecedores" && (
+          <GeneralSuppliers 
+            licitacoes={licitacoes} 
+            onOpenLicitacao={(id) => setSelectedLicitacaoId(id)} 
+          />
+        )}
+
+        {/* ============================================================ */}
+        {/* ABA MEUS EDITAIS */}
+        {/* ============================================================ */}
+        {activeMainView === "editais" && (
+          <>
+            {/* Navigation Filters & Controls bar */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                
+                {/* Search box */}
+                <div className="relative flex-1 md:max-w-md">
+                  <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Pesquisar por Edital, Órgão, Cidade ou Objeto..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:ring-1 focus:ring-blue-500 transition font-sans"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+
+                {/* Action buttons triggers */}
+                <div className="flex flex-wrap items-center gap-2.5 font-sans">
+                  <a
+                    href="https://pncp.gov.br/app/editais?pagina=1"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <ExternalLink className="w-4 h-4 text-slate-500" />
+                    Portal de Editais PNCP
+                  </a>
+                  
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-500/10 transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    Monitorar Outro Edital
+                  </button>
+
+                  <button
+                    onClick={() => setShowBackupModal(true)}
+                    className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Database className="w-4 h-4 text-slate-300" />
+                    Backup Local
+                  </button>
+                </div>
+              </div>
+
+              <hr className="border-slate-100" />
+
+              {/* Core filters select dropdown row */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 font-sans">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">Filtro Estado (UF)</label>
+                  <select
+                    className="w-full text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-2 bg-white"
+                    value={selectedState}
+                    onChange={(e) => setSelectedState(e.target.value)}
+                  >
+                    <option value="Todos">Exibir Todos Estados</option>
+                    {ESTADOS_BRASIL.map(uf => (
+                      <option key={uf} value={uf}>{uf}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">Segmento de Categoria</label>
+                  <select
+                    className="w-full text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-2 bg-white"
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                  >
+                    <option value="Todas">Exibir Todas Categorias</option>
+                    {CATEGORIAS_LICITACAO.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">Etapa de Tramitação</label>
+                  <select
+                    className="w-full text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-2 bg-white"
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                  >
+                    <option value="Todos">Exibir Qualquer Status</option>
+                    {STATUS_LICITACAO.map(st => (
+                      <option key={st.value} value={st.value}>{st.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-end justify-end">
+                  <button
+                    onClick={() => {
+                      setSearchTerm("");
+                      setSelectedState("Todos");
+                      setSelectedCategory("Todas");
+                      setSelectedStatus("Todos");
+                    }}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition cursor-pointer"
+                  >
+                    Limpar Todos os Filtros
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Loading / Content items grid */}
+            {loadingList ? (
+              <div className="py-24 text-center font-sans">
+                <RefreshCw className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
+                <span className="text-xs font-semibold text-slate-500 mt-2 block">Obtendo licitações sincronizadas...</span>
+              </div>
+            ) : filteredLicitacoes.length === 0 ? (
+              <div className="py-20 text-center bg-white border border-slate-200/80 rounded-2xl p-6 font-sans">
+                <BarChart className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <h3 className="font-bold text-slate-900 text-base">Nenhum edital coincide com os filtros</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto leading-normal">
+                  Tente alterar os termos da busca, limpar filtros da barra ou cadastrar um novo edital para acompanhar do início!
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-sans">
+                {filteredLicitacoes.map((lic) => (
+                  <LicitacaoCard
+                    key={lic.id}
+                    licitacao={lic}
+                    onSelect={() => setSelectedLicitacaoId(lic.id)}
+                    onDelete={() => setLicitacaoToDelete(lic)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
 
+      {/* Add Document / bidding creation modal */}
       <AddLicitacaoModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
@@ -423,6 +566,7 @@ export default function App() {
         onSave={handleSaveNewLicitacao}
       />
 
+      {/* Deletion Confirmation Modal */}
       {licitacaoToDelete && (
         <DeleteLicitacaoModal
           licitacao={licitacaoToDelete}
@@ -436,6 +580,7 @@ export default function App() {
         />
       )}
 
+      {/* Backup and Restore Modal */}
       <BackupModal
         isOpen={showBackupModal}
         onClose={() => setShowBackupModal(false)}

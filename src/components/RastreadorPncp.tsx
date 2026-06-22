@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Licitacao } from "../types";
 import { ESTADOS_BRASIL } from "../data";
 import { getClientAuthToken } from "../firebase";
@@ -112,22 +112,7 @@ export default function RastreadorPncp({
     { label: "Medicamentos", query: "medicamento" }
   ];
 
-  // ✅ BUSCA INICIAL AUTOMÁTICA
-  useEffect(() => {
-    if (!hasSearched) {
-      console.log("[RastreadorPncp] Busca inicial automática");
-      onSearch({
-        searchTerm: searchTerm,
-        uf: selectedUf,
-        modality: selectedModality,
-        dateRange: dateRange,
-        valorMinimo: valorMinimo,
-        valorMaximo: valorMaximo,
-        page: 1
-      });
-      setHasSearched(true);
-    }
-  }, []);
+  // ✅ REMOVIDO useEffect - A BUSCA INICIAL É CONTROLADA PELO APP
 
   const handleSearch = () => {
     onSearch({
@@ -326,7 +311,7 @@ export default function RastreadorPncp({
     }
   };
 
-  // Funções de formatação
+  // Funções de formatação (mantidas iguais)
   const formatLocation = (item: any): string => {
     const uf = item.unidadeOrgao?.ufSigla || item.ufSigla || item.orgaoEntidade?.ufSigla || "BR";
     const mun = item.unidadeOrgao?.municipioNome || item.orgaoEntidade?.municipioNome || item.municipioNome || "";

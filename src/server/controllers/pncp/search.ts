@@ -1,9 +1,8 @@
 import express from "express";
 import { fetchWithRedirects } from "./utils.js";
-import { getCachedData, setCachedData } from "../../config/redis.js";
 
 const PAGE_SIZE = 50;
-const MAX_PAGES = 15;
+const MAX_PAGES = 3; // ✅ APENAS 3 PÁGINAS PARA NÃO SOBRECARREGAR
 
 /**
  * Busca contratações na API do PNCP
@@ -14,53 +13,13 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
   const uf = req.query.uf ? String(req.query.uf) : undefined;
   const codigoModalidade = req.query.codigoModalidade ? String(req.query.codigoModalidade) : undefined;
   const pagina = req.query.pagina ? parseInt(String(req.query.pagina)) : 1;
-  const dataInicial = req.query.dataInicial ? String(req.query.dataInicial) : undefined;
-  const dataFinal = req.query.dataFinal ? String(req.query.dataFinal) : undefined;
   const valorMinimo = req.query.valorMinimo ? parseFloat(String(req.query.valorMinimo)) : undefined;
   const valorMaximo = req.query.valorMaximo ? parseFloat(String(req.query.valorMaximo)) : undefined;
 
   const page = pagina || 1;
   const searchTerm = termo ? termo.trim() : "";
 
-  // ✅ CHAVE DE CACHE
-  const cacheKey = `pncp_search_${codigoModalidade || "todas"}_${uf || "todos"}_${searchTerm || "nenhum"}`;
-  
   try {
-    // ✅ TENTA PEGAR DO CACHE PRIMEIRO
-    const cachedData = await getCachedData(cacheKey);
-    if (cachedData) {
-      console.log(`[PNCP Search] ✅ Cache HIT: ${cacheKey}`);
-      const sortedItems = sortByDate(cachedData);
-      const totalRegistros = sortedItems.length;
-      const totalPaginas = Math.max(1, Math.ceil(totalRegistros / PAGE_SIZE));
-      const startIndex = (page - 1) * PAGE_SIZE;
-      const paginatedItems = sortedItems.slice(startIndex, startIndex + PAGE_SIZE);
-
-      const todayStr = new Date().toISOString().split('T')[0].replace(/-/g, "");
-      const todayItems = sortedItems.filter(item => {
-        const data = item.dataAtualizacao || item.dataPublicacaoPncp || "";
-        return data.replace(/-/g, "").startsWith(todayStr);
-      });
-
-      return res.json({
-        success: true,
-        data: {
-          data: paginatedItems,
-          totalRegistros,
-          totalPaginas,
-          paginaAtual: page,
-          itensPorPagina: PAGE_SIZE,
-          editaisHoje: todayItems.length,
-          isMock: false,
-          fromCache: true
-        }
-      });
-    }
-
-    console.log(`[PNCP Search] 📅 Buscando editais dos últimos 30 dias`);
-    console.log(`[PNCP Search] 📌 Modalidade: ${codigoModalidade || "TODAS"}`);
-    console.log(`[PNCP Search] 📌 UF: ${uf || "TODOS"}`);
-
     const today = new Date();
     const formatDate = (date: Date) => {
       const y = date.getFullYear();
@@ -69,11 +28,16 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
       return `${y}${m}${d}`;
     };
 
+    console.log(`[PNCP Search] 📅 Buscando editais dos últimos 30 dias`);
+    console.log(`[PNCP Search] 📌 Modalidade: ${codigoModalidade || "TODAS"}`);
+    console.log(`[PNCP Search] 📌 UF: ${uf || "TODOS"}`);
+    console.log(`[PNCP Search] 📌 Termo: ${searchTerm || "NENHUM"}`);
+
     const baseUrl = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao";
     
     let allItems: any[] = [];
 
-    // ✅ BUSCA COM BACKOFF EXPONENCIAL PARA EVITAR BLOQUEIO
+    // ✅ BUSCA APENAS 3 PÁGINAS (150 itens)
     for (let p = 1; p <= MAX_PAGES; p++) {
       try {
         const params = new URLSearchParams();
@@ -100,16 +64,23 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         const apiUrl = `${baseUrl}?${params.toString()}`;
         console.log(`[PNCP Search] 📄 Página ${p}/${MAX_PAGES}...`);
         
-        const response = await fetchWithRedirects(apiUrl, 5, 20000);
-        const responseText = await response.text();
-
-        if (responseText.trim().startsWith('<!doctype') || responseText.trim().startsWith('<html')) {
-          console.warn(`[PNCP Search] Página ${p} retornou HTML, parando.`);
-          break;
-        }
+        const response = await fetch(apiUrl, {
+          headers: {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          },
+          signal: AbortSignal.timeout(15000) // ✅ TIMEOUT DE 15 SEGUNDOS
+        });
 
         if (!response.ok) {
           console.warn(`[PNCP Search] Página ${p} falhou: HTTP ${response.status}`);
+          continue;
+        }
+
+        const responseText = await response.text();
+        
+        if (responseText.trim().startsWith('<!doctype') || responseText.trim().startsWith('<html')) {
+          console.warn(`[PNCP Search] Página ${p} retornou HTML, pulando.`);
           continue;
         }
 
@@ -124,13 +95,12 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
           break;
         }
         
-        // ✅ DELAY MAIOR ENTRE REQUISIÇÕES PARA EVITAR BLOQUEIO
+        // ✅ DELAY DE 300ms ENTRE REQUISIÇÕES
         await new Promise(resolve => setTimeout(resolve, 300));
         
       } catch (err: any) {
         console.warn(`[PNCP Search] Erro na página ${p}:`, err.message);
-        // ✅ SE ERRO, ESPERA MAIS E TENTA DE NOVO
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // ✅ SE ERRO, CONTINUA TENTANDO AS PRÓXIMAS
       }
     }
 
@@ -138,14 +108,32 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     const uniqueItems = removeDuplicates(allItems);
     console.log(`[PNCP Search] ✅ Total único: ${uniqueItems.length} itens`);
 
-    // ✅ SALVA NO CACHE (válido por 10 minutos)
-    if (uniqueItems.length > 0) {
-      await setCachedData(cacheKey, uniqueItems, 10 * 60 * 1000);
-      console.log(`[PNCP Search] 💾 Cache salvo: ${cacheKey}`);
+    // ✅ Se não tem itens, retorna vazio mas com sucesso
+    if (uniqueItems.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          data: [],
+          totalRegistros: 0,
+          totalPaginas: 1,
+          paginaAtual: page,
+          itensPorPagina: PAGE_SIZE,
+          editaisHoje: 0,
+          modalidadesEncontradas: [],
+          isMock: false
+        }
+      });
     }
 
-    // Ordena por data
-    const sortedItems = sortByDate(uniqueItems);
+    // Filtro por valor
+    let filteredByValue = uniqueItems;
+    if (valorMinimo !== undefined || valorMaximo !== undefined) {
+      filteredByValue = filterByValue(uniqueItems, valorMinimo, valorMaximo);
+      console.log(`[PNCP Search] 💰 Após filtro por valor: ${filteredByValue.length} itens`);
+    }
+
+    // Ordena por data (mais recentes primeiro)
+    const sortedItems = sortByDate(filteredByValue);
 
     // Log dos 10 mais recentes
     if (sortedItems.length > 0) {
@@ -173,12 +161,6 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
       console.log(`[PNCP Search] Após filtro por termo: ${finalItems.length} itens`);
     }
 
-    // Filtro por valor
-    if (valorMinimo !== undefined || valorMaximo !== undefined) {
-      finalItems = filterByValue(finalItems, valorMinimo, valorMaximo);
-      console.log(`[PNCP Search] 💰 Após filtro por valor: ${finalItems.length} itens`);
-    }
-
     // Pagina resultados
     const totalRegistros = finalItems.length;
     const totalPaginas = Math.max(1, Math.ceil(totalRegistros / PAGE_SIZE));
@@ -203,8 +185,6 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         itensPorPagina: PAGE_SIZE,
         editaisHoje: todayItems.length,
         modalidadesEncontradas: Array.from(modalidadesEncontradas),
-        paginasBuscadas: Math.min(MAX_PAGES, Math.ceil(uniqueItems.length / PAGE_SIZE)),
-        fromCache: false,
         isMock: false
       }
     });
