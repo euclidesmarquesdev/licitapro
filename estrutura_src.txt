@@ -1,0 +1,2353 @@
+=== LISTAGEM COMPLETA DA PASTA SRC === 
+
+===== Arquivo: D:\licitapro\src\server\config\firebase.ts =====
+import { getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import fs from "fs";
+import path from "path";
+
+let isFirebaseAdminInitialized = false;
+
+try {
+  if (!getApps().length) {
+    initializeApp();
+  }
+  isFirebaseAdminInitialized = true;
+  console.log("[LicitaPro Firebase] Firebase Admin SDK inicializado com sucesso.");
+} catch (error: any) {
+  console.warn("[LicitaPro Firebase] Alerta: Falha ao inicializar o Firebase Admin SDK (pode ser ausência de credenciais default no localdev). Utilizando REST API de fallback. Erro:", error.message);
+}
+
+// Load firebase config JSON for REST fallbacks & cloud logging parameters
+export let firebaseConfig: any = {};
+try {
+  const rawConfig = fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8");
+  firebaseConfig = JSON.parse(rawConfig);
+} catch (error) {
+  console.warn("[LicitaPro Firebase] Alerta: Não foi possível obter o firebase-applet-config.json. Backend operando em modo offline.");
+}
+
+export async function verifyIdToken(idToken: string): Promise<{ uid: string; email?: string; emailVerified?: boolean } | null> {
+  if (!idToken) return null;
+
+  // 0. Support VIRTUAL_TOKEN_ prefix bypass for iframe/nested development sessions and guest support
+  if (idToken.startsWith("VIRTUAL_TOKEN_")) {
+    const rawPayload = idToken.substring("VIRTUAL_TOKEN_".length);
+    const parts = rawPayload.split("|");
+    const uid = parts[0] || "guest-dev-user";
+    const email = parts[1] || "guest@licitapro.dev";
+    return {
+      uid,
+      email,
+      emailVerified: true
+    };
+  }
+
+  // 1. Try Native Firebase Admin SDK
+  if (isFirebaseAdminInitialized) {
+    try {
+      const decodedToken = await getAuth().verifyIdToken(idToken);
+      return {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+        emailVerified: decodedToken.email_verified
+      };
+    } catch (err: any) {
+      console.warn("[LicitaPro Firebase] Verificação nativa Admin SDK falhou. Tentando REST API fallback... Erro:", err.message);
+    }
+  }
+
+  // 2. REST API fallback for local development or custom client-toolkit validations
+  const apiKey = firebaseConfig.apiKey || process.env.VITE_FIREBASE_API_KEY;
+  if (!apiKey) {
+    if (process.env.NODE_ENV === "production") {
+      console.error("[LicitaPro Firebase] Erro Crítico de Segurança: API Key do Firebase não configurada no ambiente de produção. Operação negada.");
+      return null;
+    }
+    console.warn("[LicitaPro Firebase] Alerta: API Key do Firebase não encontrada. Utilizando fallback local para desenvolvimento offline.");
+    return { uid: "guest-dev-user", email: "guest@licitapro.dev", emailVerified: true };
+  }
+
+  try {
+    const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken })
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      console.error("[LicitaPro Firebase] Erro na verificação do token no Google Client-Toolkit:", errBody);
+      return null;
+    }
+    const data = await res.json();
+    const user = data.users?.[0];
+    if (!user) return null;
+    return {
+      uid: user.localId,
+      email: user.email,
+      emailVerified: user.emailVerified
+    };
+  } catch (err) {
+    console.error("[LicitaPro Firebase] Falha geral ao verificar token via API do Google Auth:", err);
+    return null;
+  }
+}
+
+===== Arquivo: D:\licitapro\src\server\config\redis.ts =====
+import Redis from "ioredis";
+
+const redisUrl = process.env.REDIS_URL;
+export let redis: any = null;
+export let isRedisConnected = false;
+
+if (redisUrl) {
+  try {
+    redis = new Redis(redisUrl, {
+      maxRetriesPerRequest: 1,
+      connectTimeout: 5000,
+    });
+    redis.on("connect", () => {
+      isRedisConnected = true;
+      console.log("[LicitaPro Redis] Conectado ao servidor Redis com sucesso.");
+    });
+    redis.on("error", (err: any) => {
+      isRedisConnected = false;
+      console.warn("[LicitaPro Redis] Erro ou desconexão no cliente Redis (utilizando pool em memória temporariamente):", err.message);
+    });
+  } catch (err: any) {
+    console.error("[LicitaPro Redis] Falha ao instanciar cliente Redis:", err.message);
+  }
+} else {
+  console.info("[LicitaPro Redis] Variável REDIS_URL não definida. Cache e rate limit utilizando persistência volátil em memória.");
+}
+
+// In-Memory cache definition
+interface CacheEntry {
+  data: any;
+  expiry: number;
+}
+const apiCache = new Map<string, CacheEntry>();
+
+export async function getCachedData(key: string): Promise<any | null> {
+  if (isRedisConnected && redis) {
+    try {
+      const val = await redis.get(key);
+      if (val) {
+        console.log(`[LicitaPro Cache] Cache HIT para chave: ${key} (via Redis)`);
+        return JSON.parse(val);
+      }
+    } catch (err: any) {
+      console.warn("[LicitaPro Redis Cache] Falha ao ler do Redis:", err.message);
+    }
+  }
+  
+  const cached = apiCache.get(key);
+  if (cached && cached.expiry > Date.now()) {
+    console.log(`[LicitaPro Cache] Cache HIT para chave: ${key} (via Memória)`);
+    return cached.data;
+  }
+  if (cached) {
+    apiCache.delete(key);
+  }
+  return null;
+}
+
+export async function setCachedData(key: string, data: any, ttlMs: number = 10 * 60 * 1000) {
+  if (isRedisConnected && redis) {
+    try {
+      const ttlSeconds = Math.max(1, Math.floor(ttlMs / 1000));
+      await redis.set(key, JSON.stringify(data), "EX", ttlSeconds);
+      console.log(`[LicitaPro Cache] Cache SET para chave: ${key} (via Redis, TTL de ${ttlSeconds}s)`);
+      return;
+    } catch (err: any) {
+      console.warn("[LicitaPro Redis Cache] Falha ao gravar no Redis:", err.message);
+    }
+  }
+
+  apiCache.set(key, { data, expiry: Date.now() + ttlMs });
+  console.log(`[LicitaPro Cache] Cache SET para chave: ${key} (via Memória, TTL de ${ttlMs / 1000}s)`);
+}
+
+export function getCacheSize(): number {
+  return Array.from(apiCache.keys()).length;
+}
+.
+===== Arquivo: D:\licitapro\src\server\controllers\index.ts =====
+// PNCP
+export { handlePncpImport, handlePncpSearch } from "./pncp/index.js";
+
+// Licitação
+export {
+  handleScrapeBidding,
+  handlePredictBidding,
+  handleGenerateDocument
+} from "./licitacao/index.js";
+
+// Auditoria
+export {
+  handleGetAuditHistory,
+  handleGetUsageStats
+} from "./audit/index.js";.
+===== Arquivo: D:\licitapro\src\server\controllers\licitacaoController.ts =====
+/**
+ * 📁 LICITACAO CONTROLLER - PONTO DE ENTRADA
+ * 
+ * Este arquivo agora apenas re-exporta os handlers dos módulos refatorados.
+ * Mantido para compatibilidade com as rotas existentes.
+ * 
+ * @deprecated Use imports diretos de:
+ *   - import { handleScrapeBidding } from "./licitacao/scrape.js"
+ *   - import { handlePredictBidding } from "./licitacao/predict.js"
+ *   - import { handleGenerateDocument } from "./licitacao/document.js"
+ *   - import { handlePncpImport } from "./pncp/import.js"
+ *   - import { handlePncpSearch } from "./pncp/search.js"
+ *   - import { handleGetAuditHistory } from "./audit/history.js"
+ *   - import { handleGetUsageStats } from "./audit/stats.js"
+ */
+
+// ============================================================
+// LICITAÇÃO
+// ============================================================
+export { 
+  handleScrapeBidding,
+  handlePredictBidding,
+  handleGenerateDocument
+} from "./licitacao/index.js";
+
+// ============================================================
+// PNCP
+// ============================================================
+export {
+  handlePncpImport,
+  handlePncpSearch
+} from "./pncp/index.js";
+
+// ============================================================
+// AUDITORIA
+// ============================================================
+export {
+  handleGetAuditHistory,
+  handleGetUsageStats
+} from "./audit/index.js";.
+===== Arquivo: D:\licitapro\src\server\controllers\audit\history.ts =====
+import express from "express";
+import { AuthenticatedRequest } from "../../middleware/auth.js";
+import { getAuditLogsFromFirestore, getInMemoryAuditLogs } from "../../services/audit.js";
+
+export async function handleGetAuditHistory(req: express.Request, res: express.Response) {
+  try {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Token de autenticação não fornecido" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const verifiedUser = (req as AuthenticatedRequest).user;
+
+    if (!verifiedUser) {
+      return res.status(401).json({ error: "Usuário não autenticado" });
+    }
+
+    const logs = await getAuditLogsFromFirestore(token, verifiedUser.uid);
+    res.json({ success: true, logs });
+
+  } catch (err: any) {
+    console.error("[Audit History] Erro:", err);
+    res.json({ success: true, logs: getInMemoryAuditLogs() });
+  }
+}.
+===== Arquivo: D:\licitapro\src\server\controllers\audit\index.ts =====
+export { handleGetAuditHistory } from "./history.js";
+export { handleGetUsageStats } from "./stats.js";.
+===== Arquivo: D:\licitapro\src\server\controllers\audit\stats.ts =====
+import express from "express";
+import { AuthenticatedRequest } from "../../middleware/auth.js";
+import {
+  getAuditLogsFromFirestore,
+  getInMemoryAuditLogs,
+  tokenUsageMetrics
+} from "../../services/audit.js";
+import { getCacheSize, isRedisConnected } from "../../config/redis.js";
+
+export async function handleGetUsageStats(req: express.Request, res: express.Response) {
+  try {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Token de autenticação não fornecido" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const verifiedUser = (req as AuthenticatedRequest).user;
+
+    if (!verifiedUser) {
+      return res.status(401).json({ error: "Usuário não autenticado" });
+    }
+
+    // Busca logs do usuário
+    let userLogs: any[] = [];
+    try {
+      userLogs = await getAuditLogsFromFirestore(token, verifiedUser.uid);
+    } catch {
+      userLogs = getInMemoryAuditLogs();
+    }
+
+    // Calcula estatísticas do usuário
+    const userStats = calculateUserStats(userLogs);
+
+    res.json({
+      success: true,
+      userId: verifiedUser.uid,
+      email: verifiedUser.email || "anonimo@licitapro.gov",
+      userStats,
+      serverStats: {
+        totalSystemRequests: tokenUsageMetrics.totalRequests,
+        totalSystemTokens: tokenUsageMetrics.totalTokens,
+        isRedisActive: isRedisConnected,
+        cacheHits: getCacheSize()
+      }
+    });
+
+  } catch (err: any) {
+    console.error("[Stats] Erro:", err);
+    res.status(500).json({ error: "Erro ao compilar estatísticas." });
+  }
+}
+
+function calculateUserStats(logs: any[]) {
+  let requestsCount = logs.length;
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let totalTokens = 0;
+  const endpoints: Record<string, { requests: number; tokens: number }> = {};
+
+  for (const log of logs) {
+    const pTok = log.usage?.promptTokens || (log.isMock ? 350 : 1500);
+    const cTok = log.usage?.completionTokens || (log.isMock ? 50 : 400);
+
+    promptTokens += pTok;
+    completionTokens += cTok;
+    totalTokens += (pTok + cTok);
+
+    const ep = log.endpoint;
+    if (!endpoints[ep]) {
+      endpoints[ep] = { requests: 0, tokens: 0 };
+    }
+    endpoints[ep].requests += 1;
+    endpoints[ep].tokens += (pTok + cTok);
+  }
+
+  return {
+    requestsCount,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    endpoints
+  };
+}.
+===== Arquivo: D:\licitapro\src\server\controllers\licitacao\document.ts =====
+import express from "express";
+import { AuthenticatedRequest } from "../../middleware/auth.js";
+import { sanitizeInput } from "../../utils/sanitization.js";
+import { draftGovernmentDocument } from "../../services/gemini.js";
+import { addAuditLogEntry, saveAuditLogToFirestore } from "../../services/audit.js";
+
+export async function handleGenerateDocument(req: express.Request, res: express.Response) {
+  try {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Token de autenticação não fornecido" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const verifiedUser = (req as AuthenticatedRequest).user;
+
+    if (!verifiedUser) {
+      return res.status(401).json({ error: "Usuário não autenticado" });
+    }
+
+    const { docType, licitacao, ourCompanyDetails } = req.body;
+
+    if (!licitacao) {
+      return res.status(400).json({ error: "Dados da licitação são necessários." });
+    }
+
+    const defaultCompany = {
+      name: "Minha Empresa GovTech Brasil S/A",
+      cnpj: "12.345.678/0001-99",
+      address: "Av. Paulista, 1000 - Bela Vista, São Paulo - SP",
+      partnerName: "Fulano de Souza Rezende",
+      partnerCPF: "111.222.333-44",
+      partnerRole: "Sócio Administrador"
+    };
+
+    const sanitizedLicitacao = {
+      ...licitacao,
+      objeto: sanitizeInput(licitacao.objeto),
+      orgao: sanitizeInput(licitacao.orgao),
+      edital: sanitizeInput(licitacao.edital)
+    };
+
+    const sanitizedCompany = {
+      name: sanitizeInput(ourCompanyDetails?.name || defaultCompany.name),
+      cnpj: sanitizeInput(ourCompanyDetails?.cnpj || defaultCompany.cnpj),
+      address: sanitizeInput(ourCompanyDetails?.address || defaultCompany.address),
+      partnerName: sanitizeInput(ourCompanyDetails?.partnerName || defaultCompany.partnerName),
+      partnerCPF: sanitizeInput(ourCompanyDetails?.partnerCPF || defaultCompany.partnerCPF),
+      partnerRole: sanitizeInput(ourCompanyDetails?.partnerRole || defaultCompany.partnerRole)
+    };
+
+    const { draft, isMock, usage } = await draftGovernmentDocument(
+      docType,
+      sanitizedLicitacao,
+      sanitizedCompany
+    );
+
+    const log = addAuditLogEntry(
+      "/api/licitacoes/generate-document",
+      { docType },
+      { success: true, data: draft },
+      isMock,
+      undefined,
+      usage
+    );
+    await saveAuditLogToFirestore(token, log, verifiedUser.uid);
+
+    res.json({ success: true, isMock, data: draft });
+
+  } catch (err: any) {
+    console.error("[Document] Erro:", err);
+    const isTimeout = err.message.includes("timeout") || err.message.includes("deadline");
+    res.status(500).json({
+      error: isTimeout
+        ? "A geração do documento excedeu o limite de tempo."
+        : "Erro na geração do documento: " + err.message
+    });
+  }
+}.
+===== Arquivo: D:\licitapro\src\server\controllers\licitacao\index.ts =====
+export { handleScrapeBidding } from "./scrape.js";
+export { handlePredictBidding } from "./predict.js";
+export { handleGenerateDocument } from "./document.js";.
+===== Arquivo: D:\licitapro\src\server\controllers\licitacao\predict.ts =====
+import express from "express";
+import { AuthenticatedRequest } from "../../middleware/auth.js";
+import { sanitizeInput } from "../../utils/sanitization.js";
+import { getCachedData, setCachedData } from "../../config/redis.js";
+import { predictBiddingOutcome } from "../../services/gemini.js";
+import { addAuditLogEntry, saveAuditLogToFirestore } from "../../services/audit.js";
+
+export async function handlePredictBidding(req: express.Request, res: express.Response) {
+  try {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Token de autenticação não fornecido" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const verifiedUser = (req as AuthenticatedRequest).user;
+
+    if (!verifiedUser) {
+      return res.status(401).json({ error: "Usuário não autenticado" });
+    }
+
+    const { licitacao, competitors, historicalPrices } = req.body;
+
+    if (!licitacao) {
+      return res.status(400).json({ error: "Dados da licitação não fornecidos." });
+    }
+
+    const cacheKey = `predict-${licitacao.id}`;
+    const cached = await getCachedData(cacheKey);
+    if (cached) {
+      const log = addAuditLogEntry(
+        "/api/licitacoes/predict (cache)",
+        { licitacaoId: licitacao.id },
+        { success: true, prediction: cached },
+        false
+      );
+      await saveAuditLogToFirestore(token, log, verifiedUser.uid);
+      return res.json({ success: true, prediction: cached, isCached: true });
+    }
+
+    const sanitizedLicitacao = {
+      ...licitacao,
+      objeto: sanitizeInput(licitacao.objeto),
+      orgao: sanitizeInput(licitacao.orgao),
+      edital: sanitizeInput(licitacao.edital)
+    };
+
+    const { prediction, citations, isMock, usage } = await predictBiddingOutcome(
+      sanitizedLicitacao,
+      competitors,
+      historicalPrices
+    );
+
+    await setCachedData(cacheKey, prediction);
+
+    const log = addAuditLogEntry(
+      "/api/licitacoes/predict",
+      { licitacaoId: sanitizedLicitacao.id },
+      { success: true, prediction },
+      isMock,
+      citations,
+      usage
+    );
+    await saveAuditLogToFirestore(token, log, verifiedUser.uid);
+
+    res.json({ success: true, isMock, prediction });
+
+  } catch (err: any) {
+    console.error("[Predict] Erro:", err);
+    const isTimeout = err.message.includes("timeout") || err.message.includes("deadline");
+    res.status(500).json({
+      error: isTimeout
+        ? "A análise preditiva excedeu o limite de tempo."
+        : "Erro na análise preditiva: " + err.message
+    });
+  }
+}.
+===== Arquivo: D:\licitapro\src\server\controllers\licitacao\scrape.ts =====
+import express from "express";
+import { AuthenticatedRequest } from "../../middleware/auth.js";
+import { sanitizeInput } from "../../utils/sanitization.js";
+import { getCachedData, setCachedData } from "../../config/redis.js";
+import { extractBiddingMetadata } from "../../services/gemini.js";
+import { addAuditLogEntry, saveAuditLogToFirestore } from "../../services/audit.js";
+
+// Domínios permitidos para scraping
+const ALLOWED_DOMAINS = [
+  "pncp.gov.br",
+  "comprasnet.gov.br",
+  "comprasgovernamentais.gov.br",
+  "transparencia.gov.br",
+  "portaldatransparencia.gov.br"
+];
+
+function isUrlAllowed(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname.endsWith(".gov.br")) return true;
+    return ALLOWED_DOMAINS.some(domain => hostname === domain || hostname.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
+export async function handleScrapeBidding(req: express.Request, res: express.Response) {
+  try {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Token de autenticação não fornecido" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const verifiedUser = (req as AuthenticatedRequest).user;
+
+    if (!verifiedUser) {
+      return res.status(401).json({ error: "Usuário não autenticado" });
+    }
+
+    const { url, rawText } = req.body;
+    const sanitizedUrl = sanitizeInput(url);
+    const sanitizedRawText = sanitizeInput(rawText);
+
+    // ✅ SSRF Protection
+    if (sanitizedUrl && !isUrlAllowed(sanitizedUrl)) {
+      return res.status(400).json({
+        error: "URL não autorizada. Apenas domínios governamentais (.gov.br) são permitidos.",
+        code: "SCRAPE_001"
+      });
+    }
+
+    const cacheKey = sanitizedUrl
+      ? `scrape-${sanitizedUrl}`
+      : `scrape-hash-${(sanitizedRawText || "").substring(0, 100)}-${(sanitizedRawText || "").length}`;
+
+    // Check cache
+    const cached = await getCachedData(cacheKey);
+    if (cached) {
+      const log = addAuditLogEntry(
+        "/api/licitacoes/scrape (cache)",
+        { url: sanitizedUrl },
+        { success: true, data: cached },
+        false
+      );
+      await saveAuditLogToFirestore(token, log, verifiedUser.uid);
+      return res.json({ success: true, data: cached, isCached: true });
+    }
+
+    let textToAnalyze = sanitizedRawText || "";
+    let useUrlContextTool = false;
+
+    // Fetch if URL provided but no text
+    if (sanitizedUrl && !textToAnalyze) {
+      try {
+        const fetchRes = await fetch(sanitizedUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          }
+        });
+        if (fetchRes.ok) {
+          const html = await fetchRes.text();
+          textToAnalyze = html
+            .replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, "")
+            .replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .substring(0, 45000);
+        } else {
+          useUrlContextTool = true;
+        }
+      } catch {
+        useUrlContextTool = true;
+      }
+    }
+
+    if (!useUrlContextTool && (!textToAnalyze || textToAnalyze.trim().length === 0)) {
+      return res.status(400).json({
+        error: "Nenhum texto ou URL de edital válido foi fornecido."
+      });
+    }
+
+    // Extract metadata
+    const { parsed, isMock, usage } = await extractBiddingMetadata(
+      textToAnalyze,
+      sanitizedUrl,
+      useUrlContextTool
+    );
+
+    await setCachedData(cacheKey, parsed);
+
+    const log = addAuditLogEntry(
+      "/api/licitacoes/scrape",
+      { url: sanitizedUrl, textLength: textToAnalyze?.length || 0 },
+      { success: true, data: parsed },
+      isMock,
+      undefined,
+      usage
+    );
+    await saveAuditLogToFirestore(token, log, verifiedUser.uid);
+
+    res.json({ success: true, isMock, data: parsed });
+
+  } catch (err: any) {
+    console.error("[Scrape] Erro:", err);
+    const isTimeout = err.message.includes("timeout") || err.message.includes("deadline");
+    res.status(500).json({
+      error: isTimeout
+        ? "O processamento excedeu o limite de tempo. Tente com trechos menores."
+        : "Erro ao processar o documento: " + err.message
+    });
+  }
+}.
+===== Arquivo: D:\licitapro\src\server\controllers\pncp\import.ts =====
+import express from "express";
+import { AuthenticatedRequest } from "../../middleware/auth.js";
+import {
+  fetchWithRedirects,
+  parsePncpIdentifier,
+  buildPncpUrls,
+  mapPncpData
+} from "./utils.js";
+import { isGeminiConfigured, ai, Type } from "../../services/gemini.js";
+import { addAuditLogEntry, saveAuditLogToFirestore } from "../../services/audit.js";
+
+/**
+ * Importa um edital do PNCP pelo ID ou URL
+ */
+export async function handlePncpImport(req: express.Request, res: express.Response) {
+  try {
+    // 1. Extrai token
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Token de autenticação não fornecido" });
+    }
+
+    const token = authHeader.split(" ")[1];
+    const verifiedUser = (req as AuthenticatedRequest).user;
+
+    if (!verifiedUser) {
+      return res.status(401).json({ error: "Usuário não autenticado" });
+    }
+
+    // 2. Extrai dados do body
+    const { urlOrCode, runAIEnhance, clientProvidedData } = req.body;
+
+    if (!urlOrCode || urlOrCode.trim().length < 5) {
+      return res.status(400).json({ 
+        error: "Forneça um link válido do PNCP ou o ID de contratação." 
+      });
+    }
+
+    // 3. Parseia o identificador
+    const parsed = parsePncpIdentifier(urlOrCode.trim());
+    if (!parsed.isValid) {
+      return res.status(400).json({
+        error: "Não foi possível extrair o CNPJ, ano e sequencial. Formato esperado: CNPJ/ANO/SEQUENCIAL"
+      });
+    }
+
+    console.log(`[PNCP Import] CNPJ: ${parsed.cnpj}, Ano: ${parsed.ano}, Seq: ${parsed.sequencial}`);
+
+    // 4. Busca os dados
+    let purchaseDetails: any = null;
+    let itemsList: any[] = [];
+    let filesList: any[] = [];
+    let fetchErrorMsg = "";
+
+    if (clientProvidedData) {
+      console.log("[PNCP Import] Usando dados enviados pelo navegador");
+      purchaseDetails = clientProvidedData.purchaseDetails;
+      itemsList = clientProvidedData.itemsList || [];
+      filesList = clientProvidedData.filesList || [];
+    } else {
+      // ✅ Gera URLs com fallback
+      const urls = buildPncpUrls(parsed.cnpj, parsed.ano, parsed.sequencial);
+
+      // ✅ BUSCA DETALHES - Tenta todas as URLs de detalhes
+      console.log("[PNCP Import] Buscando detalhes do edital...");
+      for (const url of urls.detail) {
+        try {
+          console.log(`[PNCP Import] Tentando: ${url}`);
+          const response = await fetchWithRedirects(url, 5, 15000);
+          
+          if (response.ok) {
+            purchaseDetails = await response.json();
+            console.log(`[PNCP Import] ✅ Detalhes obtidos de: ${url}`);
+            break;
+          } else {
+            fetchErrorMsg = `HTTP ${response.status}`;
+            console.log(`[PNCP Import] ❌ Falha em ${url}: ${fetchErrorMsg}`);
+          }
+        } catch (err: any) {
+          fetchErrorMsg = err.message;
+          console.log(`[PNCP Import] ❌ Erro em ${url}: ${fetchErrorMsg}`);
+        }
+      }
+
+      // ✅ SE CONSEGUIU DETALHES, BUSCA ITENS E ARQUIVOS
+      if (purchaseDetails) {
+        // Busca itens
+        console.log("[PNCP Import] Buscando itens...");
+        for (const url of urls.items) {
+          try {
+            console.log(`[PNCP Import] Tentando itens: ${url}`);
+            const response = await fetchWithRedirects(url, 5, 15000);
+            if (response.ok) {
+              const data = await response.json();
+              itemsList = Array.isArray(data) ? data : (data.resultado || data.data || []);
+              console.log(`[PNCP Import] ✅ ${itemsList.length} itens encontrados`);
+              break;
+            }
+          } catch (err: any) {
+            console.log(`[PNCP Import] ❌ Erro ao buscar itens: ${err.message}`);
+          }
+        }
+
+        // Busca arquivos
+        console.log("[PNCP Import] Buscando arquivos...");
+        for (const url of urls.files) {
+          try {
+            console.log(`[PNCP Import] Tentando arquivos: ${url}`);
+            const response = await fetchWithRedirects(url, 5, 15000);
+            if (response.ok) {
+              const data = await response.json();
+              filesList = Array.isArray(data) ? data : (data.resultado || data.data || []);
+              console.log(`[PNCP Import] ✅ ${filesList.length} arquivos encontrados`);
+              break;
+            }
+          } catch (err: any) {
+            console.log(`[PNCP Import] ❌ Erro ao buscar arquivos: ${err.message}`);
+          }
+        }
+      }
+    }
+
+    // 5. Verifica se conseguiu os dados
+    if (!purchaseDetails) {
+      return res.status(404).json({
+        error: `Não foi possível obter detalhes deste edital. Erro: ${fetchErrorMsg || "API indisponível"}`
+      });
+    }
+
+    // 6. Mapeia os dados
+    console.log("[PNCP Import] Mapeando dados...");
+    const mappedData = mapPncpData(purchaseDetails, itemsList, filesList);
+
+    // 7. Enriquecimento com IA (opcional)
+    let aiEnhancement = null;
+    if (runAIEnhance && isGeminiConfigured) {
+      console.log("[PNCP Import] Enriquecendo com IA...");
+      aiEnhancement = await enhanceWithAI(purchaseDetails, mappedData);
+    }
+
+    // 8. Monta resultado final
+    const result = {
+      ...mappedData,
+      checklistRecomendado: aiEnhancement?.checklist || [
+        "Certidão Conjunta Negativa de Débitos Federais",
+        "Certificado de Regularidade do FGTS (CRF)",
+        "Certidão Negativa de Débitos Trabalhistas (CNDT)",
+        "Balanço Patrimonial do último exercício social",
+        "Atestado de Capacidade Técnica operacional compatível"
+      ],
+      competitorsEstimated: aiEnhancement?.competitors || [],
+      disclaimer: "Dados recuperados diretamente da API oficial do PNCP/MGI"
+    };
+
+    // 9. Registra auditoria
+    const auditLog = addAuditLogEntry(
+      "/api/pncp/import",
+      { urlOrCode, runAIEnhance, parsedCnpj: parsed.cnpj },
+      { success: true, data: result },
+      false,
+      undefined,
+      aiEnhancement?.usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+    );
+    await saveAuditLogToFirestore(token, auditLog, verifiedUser.uid);
+
+    console.log("[PNCP Import] ✅ Importação concluída com sucesso!");
+    res.json({ success: true, isMock: false, data: result });
+
+  } catch (err: any) {
+    console.error("[PNCP Import] ❌ Erro:", err);
+    res.status(500).json({ 
+      error: "Falha na conexão com o sistema do PNCP: " + err.message 
+    });
+  }
+}
+
+/**
+ * Enriquecimento com IA
+ */
+async function enhanceWithAI(purchaseDetails: any, mappedData: any): Promise<{
+  checklist: string[];
+  competitors: string[];
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+}> {
+  const org = purchaseDetails.orgaoEntidade?.razaoSocial || "Órgão";
+  const modeName = purchaseDetails.modalidadeNome || "Pregão";
+  const rawObjeto = purchaseDetails.objetoCompra || purchaseDetails.objeto || "";
+  const rawValue = purchaseDetails.valorTotalEstimado || 0;
+
+  const aiPrompt = `
+    Com base nos dados do edital, retorne em JSON:
+    - 'checklistRecomendado': 4 a 8 documentos de habilitação específicos
+    - 'competitorsEstimated': 2 a 4 empresas concorrentes realistas
+
+    Órgão: ${org}
+    Objeto: ${rawObjeto}
+    Modalidade: ${modeName}
+    Valor: R$ ${rawValue}
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [{ parts: [{ text: aiPrompt }] }],
+      config: {
+        systemInstruction: "Aja como Analista de Licitações Sênior.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            checklistRecomendado: { type: Type.ARRAY, items: { type: Type.STRING } },
+            competitorsEstimated: { type: Type.ARRAY, items: { type: Type.STRING } }
+          },
+          required: ["checklistRecomendado", "competitorsEstimated"]
+        }
+      }
+    });
+
+    const parsed = JSON.parse(response.text?.trim() || "{}");
+
+    return {
+      checklist: parsed.checklistRecomendado || [],
+      competitors: parsed.competitorsEstimated || [],
+      usage: {
+        promptTokens: response.usageMetadata?.promptTokenCount || 500,
+        completionTokens: response.usageMetadata?.candidatesTokenCount || 200,
+        totalTokens: response.usageMetadata?.totalTokenCount || 700
+      }
+    };
+  } catch (err) {
+    console.warn("[PNCP Import] IA falhou:", err);
+    return {
+      checklist: [],
+      competitors: [],
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+    };
+  }
+}.
+===== Arquivo: D:\licitapro\src\server\controllers\pncp\index.ts =====
+export { handlePncpImport } from "./import.js";
+export { handlePncpSearch } from "./search.js";.
+===== Arquivo: D:\licitapro\src\server\controllers\pncp\search.ts =====
+import express from "express";
+import { fetchWithRedirects } from "./utils.js";
+
+const PAGE_SIZE = 50;
+const MAX_PAGES = 4;
+
+/**
+ * Busca contratações na API do PNCP
+ * Endpoint: /v1/contratacoes/proposta (propostas em aberto)
+ * Comportamento igual ao portal: https://pncp.gov.br/app/editais
+ */
+export async function handlePncpSearch(req: express.Request, res: express.Response) {
+  // Converte query params para string com segurança
+  const termo = req.query.termo ? String(req.query.termo) : undefined;
+  const uf = req.query.uf ? String(req.query.uf) : undefined;
+  const codigoModalidade = req.query.codigoModalidade ? String(req.query.codigoModalidade) : undefined;
+  const pagina = req.query.pagina ? parseInt(String(req.query.pagina)) : 1;
+  const dataInicial = req.query.dataInicial ? String(req.query.dataInicial) : undefined;
+  const dataFinal = req.query.dataFinal ? String(req.query.dataFinal) : undefined;
+  
+  // ✅ NOVOS PARÂMETROS: valor mínimo e máximo
+  const valorMinimo = req.query.valorMinimo ? parseFloat(String(req.query.valorMinimo)) : undefined;
+  const valorMaximo = req.query.valorMaximo ? parseFloat(String(req.query.valorMaximo)) : undefined;
+
+  const page = pagina || 1;
+  const searchTerm = termo ? termo.trim() : "";
+
+  try {
+    const today = new Date();
+    const formatDate = (date: Date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}${m}${d}`;
+    };
+
+    // Endpoint de propostas em aberto (igual ao portal)
+    const baseUrl = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta";
+    
+    console.log(`[PNCP Search] 📅 Buscando propostas em aberto`);
+    console.log(`[PNCP Search] 📌 Modalidade: ${codigoModalidade || "TODAS"}`);
+    console.log(`[PNCP Search] 📌 UF: ${uf || "TODOS"}`);
+    console.log(`[PNCP Search] 📌 Termo: ${searchTerm || "NENHUM"}`);
+    console.log(`[PNCP Search] 💰 Valor: ${valorMinimo || 0} - ${valorMaximo || "∞"}`);
+
+    let allItems: any[] = [];
+
+    // Busca páginas 1 a 4 para garantir os mais recentes
+    for (let p = 1; p <= MAX_PAGES; p++) {
+      try {
+        const params = new URLSearchParams();
+        
+        params.append("dataFinal", formatDate(today));
+        
+        const pastDate = new Date();
+        pastDate.setDate(today.getDate() - 30);
+        params.append("dataInicial", formatDate(pastDate));
+        
+        params.append("pagina", String(p));
+        params.append("tamanhoPagina", String(PAGE_SIZE));
+
+        const isModalidadeValida = codigoModalidade && 
+                                   codigoModalidade !== "Todos" && 
+                                   codigoModalidade !== "" &&
+                                   codigoModalidade !== "undefined";
+        
+        if (isModalidadeValida) {
+          params.append("codigoModalidadeContratacao", String(codigoModalidade));
+          console.log(`[PNCP Search] Filtrando por modalidade: ${codigoModalidade}`);
+        } else {
+          console.log(`[PNCP Search] Buscando TODAS as modalidades`);
+        }
+
+        if (uf && uf !== "Todos" && uf !== "" && uf !== "undefined") {
+          params.append("uf", uf);
+        }
+
+        const apiUrl = `${baseUrl}?${params.toString()}`;
+        console.log(`[PNCP Search] 📄 Página ${p}: ${apiUrl}`);
+        
+        const response = await fetchWithRedirects(apiUrl, 5, 20000);
+        const responseText = await response.text();
+
+        if (responseText.trim().startsWith('<!doctype') || responseText.trim().startsWith('<html')) {
+          console.warn(`[PNCP Search] Página ${p} retornou HTML, pulando.`);
+          continue;
+        }
+
+        if (!response.ok) {
+          console.warn(`[PNCP Search] Página ${p} falhou: HTTP ${response.status}`);
+          continue;
+        }
+
+        const apiData = JSON.parse(responseText);
+        const items = apiData.data || apiData.resultado || [];
+        
+        console.log(`[PNCP Search] Página ${p}: ${items.length} itens encontrados`);
+        allItems.push(...items);
+        
+        if (allItems.length >= 200) {
+          console.log(`[PNCP Search] Coletados ${allItems.length} itens, suficiente.`);
+          break;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 150));
+        
+      } catch (err: any) {
+        console.warn(`[PNCP Search] Erro na página ${p}:`, err.message);
+      }
+    }
+
+    // Remove duplicatas
+    const uniqueItems = removeDuplicates(allItems);
+    console.log(`[PNCP Search] ✅ Total único: ${uniqueItems.length} itens`);
+
+    // ✅ FILTRO POR VALOR (aplica antes da ordenação)
+    let filteredByValue = uniqueItems;
+    if (valorMinimo !== undefined || valorMaximo !== undefined) {
+      filteredByValue = filterByValue(uniqueItems, valorMinimo, valorMaximo);
+      console.log(`[PNCP Search] 💰 Após filtro por valor: ${filteredByValue.length} itens`);
+    }
+
+    // Ordena por data
+    const sortedItems = sortByDate(filteredByValue);
+
+    // Log dos 10 mais recentes
+    if (sortedItems.length > 0) {
+      console.log(`[PNCP Search] 📅 10 mais recentes:`);
+      sortedItems.slice(0, 10).forEach((item, i) => {
+        const data = item.dataAtualizacao || item.dataPublicacaoPncp || "data desconhecida";
+        const orgao = item.orgaoEntidade?.razaoSocial || "Órgão";
+        const modalidade = item.modalidadeNome || "Modalidade";
+        const valor = item.valorTotalEstimado || item.valorEstimado || 0;
+        console.log(`  ${i+1}. ${data} - ${modalidade} - ${orgao} - R$ ${valor.toLocaleString('pt-BR')}`);
+      });
+    }
+
+    // Verifica editais de hoje
+    const todayStr = formatDate(today);
+    const todayItems = sortedItems.filter(item => {
+      const data = item.dataAtualizacao || item.dataPublicacaoPncp || "";
+      return data.replace(/-/g, "").startsWith(todayStr);
+    });
+    console.log(`[PNCP Search] 📌 Editais de hoje (${todayStr}): ${todayItems.length}`);
+
+    // Aplica filtro por termo
+    let finalItems = sortedItems;
+    if (searchTerm) {
+      finalItems = filterByTerm(sortedItems, searchTerm);
+      console.log(`[PNCP Search] Após filtro por termo: ${finalItems.length} itens`);
+    }
+
+    // Pagina resultados
+    const totalRegistros = finalItems.length;
+    const totalPaginas = Math.max(1, Math.ceil(totalRegistros / PAGE_SIZE));
+    const startIndex = (page - 1) * PAGE_SIZE;
+    const paginatedItems = finalItems.slice(startIndex, startIndex + PAGE_SIZE);
+
+    // Conta modalidades
+    const modalidadesEncontradas = new Set<string>();
+    finalItems.forEach(item => {
+      if (item.modalidadeNome) {
+        modalidadesEncontradas.add(item.modalidadeNome);
+      }
+    });
+    console.log(`[PNCP Search] 📊 Modalidades: ${Array.from(modalidadesEncontradas).join(', ')}`);
+
+    res.json({
+      success: true,
+      data: {
+        data: paginatedItems,
+        totalRegistros,
+        totalPaginas,
+        paginaAtual: page,
+        itensPorPagina: PAGE_SIZE,
+        editaisHoje: todayItems.length,
+        modalidadesEncontradas: Array.from(modalidadesEncontradas),
+        filtroValor: {
+          minimo: valorMinimo || 0,
+          maximo: valorMaximo || "∞",
+          aplicado: !!(valorMinimo !== undefined || valorMaximo !== undefined)
+        },
+        isMock: false
+      }
+    });
+
+  } catch (error: any) {
+    console.error("[PNCP Search] Erro:", error);
+    res.status(500).json({
+      success: false,
+      error: "Erro ao consultar API do PNCP: " + error.message
+    });
+  }
+}
+
+/**
+ * ✅ FILTRA ITENS POR FAIXA DE VALOR
+ */
+function filterByValue(items: any[], valorMinimo?: number, valorMaximo?: number): any[] {
+  return items.filter(item => {
+    // Tenta obter o valor do item (prioriza valorTotalEstimado, depois valorEstimado)
+    const valor = item.valorTotalEstimado || item.valorEstimado || 0;
+    
+    // Se valor for 0, considera como "não informado" e mantém (a menos que o usuário esteja filtrando)
+    if (valor === 0) {
+      // Se o usuário está filtrando por valor mínimo > 0, exclui itens sem valor
+      if (valorMinimo !== undefined && valorMinimo > 0) {
+        return false;
+      }
+      // Se o usuário está filtrando por valor máximo, mantém itens sem valor
+      return true;
+    }
+
+    // Verifica valor mínimo
+    if (valorMinimo !== undefined && valor < valorMinimo) {
+      return false;
+    }
+
+    // Verifica valor máximo
+    if (valorMaximo !== undefined && valor > valorMaximo) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+/**
+ * Remove duplicatas baseado no ID
+ */
+function removeDuplicates(items: any[]): any[] {
+  const seen = new Set();
+  return items.filter(item => {
+    const id = item.numeroControlePNCP || item.id;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+/**
+ * Ordena itens por data (mais recentes primeiro)
+ */
+function sortByDate(items: any[]): any[] {
+  return [...items].sort((a, b) => {
+    const dateA = a.dataAtualizacao || a.dataAtualizacaoGlobal || a.dataPublicacaoPncp || "";
+    const dateB = b.dataAtualizacao || b.dataAtualizacaoGlobal || b.dataPublicacaoPncp || "";
+    const timeA = new Date(dateA).getTime();
+    const timeB = new Date(dateB).getTime();
+    if (isNaN(timeA) && isNaN(timeB)) return 0;
+    if (isNaN(timeA)) return 1;
+    if (isNaN(timeB)) return -1;
+    return timeB - timeA;
+  });
+}
+
+/**
+ * Filtra itens por termo de busca
+ */
+function filterByTerm(items: any[], term: string): any[] {
+  const normalize = (text: string) => {
+    return (text || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+  };
+
+  const keyword = normalize(term);
+
+  return items.filter((item: any) => {
+    const orgao = normalize(item.orgaoEntidade?.razaoSocial || "");
+    const objeto = normalize(item.objetoCompra || item.objeto || "");
+    const pncpId = normalize(item.numeroControlePNCP || "");
+    const modalidade = normalize(item.modalidadeNome || "");
+
+    return orgao.includes(keyword) ||
+           objeto.includes(keyword) ||
+           pncpId.includes(keyword) ||
+           modalidade.includes(keyword);
+  });
+}.
+===== Arquivo: D:\licitapro\src\server\controllers\pncp\utils.ts =====
+/**
+ * Utilitários para integração com a API do PNCP
+ */
+
+/**
+ * Segue redirecionamentos HTTP (301, 302, 307, 308)
+ */
+export async function fetchWithRedirects(
+  url: string,
+  maxRedirects: number = 5,
+  timeoutMs: number = 15000
+): Promise<Response> {
+  let currentUrl = url;
+  let redirects = 0;
+
+  while (redirects < maxRedirects) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(currentUrl, {
+        headers: {
+          "Accept": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Cache-Control": "no-cache"
+        },
+        signal: controller.signal,
+        redirect: "manual"
+      });
+      clearTimeout(timeoutId);
+
+      // ✅ Se for redirecionamento sem Location, tenta novamente com redirect: follow
+      if ([301, 302, 307, 308].includes(response.status)) {
+        const location = response.headers.get("location");
+        if (!location) {
+          console.log(`[PNCP] Redirecionamento sem Location em ${currentUrl}, tentando com follow...`);
+          // Tenta novamente com redirect automático
+          const followResponse = await fetch(currentUrl, {
+            headers: {
+              "Accept": "application/json",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            redirect: "follow"
+          });
+          return followResponse;
+        }
+        currentUrl = new URL(location, currentUrl).toString();
+        console.log(`[PNCP] Seguindo redirecionamento: ${currentUrl}`);
+        redirects++;
+        continue;
+      }
+
+      return response;
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") {
+        throw new Error(`Timeout após ${timeoutMs}ms na requisição ao PNCP`);
+      }
+      throw err;
+    }
+  }
+
+  throw new Error(`Máximo de ${maxRedirects} redirecionamentos excedido`);
+}
+
+/**
+ * Extrai CNPJ, Ano e Sequencial de uma URL ou código PNCP
+ */
+export function parsePncpIdentifier(input: string): {
+  cnpj: string;
+  ano: string;
+  sequencial: string;
+  isValid: boolean;
+} {
+  const cleanInput = input.trim();
+
+  // Tenta extrair via regex: CNPJ/ANO/SEQUENCIAL
+  const urlRegex = /(\d{14})\/(\d{4})\/(\d+)/;
+  const match = cleanInput.match(urlRegex);
+
+  if (match) {
+    return {
+      cnpj: match[1],
+      ano: match[2],
+      sequencial: match[3],
+      isValid: true
+    };
+  }
+
+  // Fallback: extrai números do texto
+  const numbers = cleanInput.match(/\d+/g) || [];
+  const foundCnpj = numbers.find((n: string) => n.length === 14);
+
+  if (foundCnpj) {
+    const foundYear = numbers.find((n: string) => n.length === 4 && parseInt(n) >= 2021 && parseInt(n) <= 2030);
+    if (foundYear) {
+      const otherNumbers = numbers.filter((n: string) => n !== foundCnpj && n !== foundYear);
+      const sequencial = otherNumbers.length > 0 ? otherNumbers[otherNumbers.length - 1] : "";
+      return {
+        cnpj: foundCnpj,
+        ano: foundYear,
+        sequencial,
+        isValid: !!sequencial
+      };
+    }
+  }
+
+  return {
+    cnpj: "",
+    ano: "",
+    sequencial: "",
+    isValid: false
+  };
+}
+
+/**
+ * Gera URLs para consulta ao PNCP (com fallback)
+ */
+export function buildPncpUrls(cnpj: string, ano: string, sequencial: string): {
+  detail: string[];
+  items: string[];
+  files: string[];
+} {
+  // ✅ Duas versões da URL para fallback (pncp/v1 e consulta/v1)
+  const baseUrls = [
+    `https://pncp.gov.br/api/pncp/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`,
+    `https://pncp.gov.br/api/consulta/v1/orgaos/${cnpj}/compras/${ano}/${sequencial}`
+  ];
+
+  return {
+    detail: baseUrls,
+    items: baseUrls.map(url => `${url}/itens?pagina=1&tamanhoPagina=500`),
+    files: baseUrls.map(url => `${url}/arquivos`)
+  };
+}
+
+/**
+ * Mapeia dados do PNCP para o formato padronizado da aplicação
+ */
+export function mapPncpData(
+  purchaseDetails: any,
+  itemsList: any[],
+  filesList: any[]
+): {
+  edital: string;
+  orgao: string;
+  modalidade: string;
+  objeto: string;
+  valorEstimado: number;
+  dataSessao: string;
+  cidade: string;
+  estado: string;
+  categoria: string;
+  unidadeCompradora: string;
+  amparoLegal: string;
+  idContratacaoPncp: string;
+  modoDisputa: string;
+  dataInicioPropostas: string;
+  dataFimPropostas: string;
+  itensPncp: any[];
+  arquivosPncp: any[];
+} {
+  // Extrai dados básicos
+  const org = purchaseDetails.orgaoEntidade?.razaoSocial || purchaseDetails.orgaoEntidade?.nomeOrgao || "Órgão do PNCP";
+  const modeName = purchaseDetails.modalidadeNome || "Pregão Eletrônico";
+  const rawObjeto = purchaseDetails.objetoCompra || purchaseDetails.objeto || "Objeto não informado.";
+  const rawValue = purchaseDetails.valorTotalEstimado || purchaseDetails.valorEstimado || 0;
+  const num = purchaseDetails.numeroCompra || purchaseDetails.sequencialCompra || "";
+  const anoCompra = purchaseDetails.anoCompra || "";
+  const isSrp = purchaseDetails.srp === true;
+
+  // Cria título humanizado
+  let humanizedTitle = modeName.replace(/\s*-\s*/, " ").trim();
+  if (humanizedTitle.toLowerCase().startsWith("pregão")) {
+    humanizedTitle = "Pregão Eletrônico";
+  } else if (humanizedTitle.toLowerCase().startsWith("dispensa")) {
+    humanizedTitle = "Dispensa de Licitação";
+  }
+
+  if (isSrp) humanizedTitle += " SRP";
+  if (num) {
+    humanizedTitle += ` ${num}`;
+    if (anoCompra) humanizedTitle += `/${anoCompra}`;
+  } else if (anoCompra) {
+    humanizedTitle += ` ${anoCompra}`;
+  }
+
+  // Auto-mapeamento de categoria
+  let category = "Materiais & Equipamentos";
+  const objLower = rawObjeto.toLowerCase();
+  const categoryMap: Record<string, string[]> = {
+    "Tecnologia da Informação": ["tecnologia", "software", "hardware", "computador", "sistema", "internet", "fibra", "servidor", "ti ", "nuvem", "cloud"],
+    "Obras & Engenharia": ["obra", "reforma", "constru", "engenharia", "asfalto", "pavimentação", "saneamento", "edificação", "infraestrutura"],
+    "Saúde & Medicamentos": ["saude", "medicamento", "hospitalar", "clinica", "odontológico", "vacina", "remedio"],
+    "Consultoria": ["consultoria", "treinamento", "assessoria", "auditoria", "parecer", "estudo"],
+    "Serviços Gerais": ["limpeza", "vigilancia", "seguranca", "conservação", "coleta", "jardinagem", "manutenção"],
+    "Alimentação & Merenda": ["merenda", "alimento", "refeicao", "cozinha", "nutrição"]
+  };
+
+  for (const [cat, keywords] of Object.entries(categoryMap)) {
+    if (keywords.some(kw => objLower.includes(kw))) {
+      category = cat;
+      break;
+    }
+  }
+
+  // Mapeia arquivos
+  const mappedArquivos = filesList.map((file: any, index: number) => ({
+    id: `pncp-doc-${index + 1}-${Date.now()}`,
+    nome: file.nomeOriginal || file.nome || file.titulo || `Documento_${index + 1}.pdf`,
+    descricao: file.tipoDocumentoNome || file.descricao || "Documentação Oficial",
+    tamanho: file.tamanho ? `${(file.tamanho / 1024 / 1024).toFixed(2)} MB` : "Indisponível",
+    linkUrl: file.link || file.uri || ""
+  }));
+
+  // Mapeia itens
+  const mappedItens = itemsList.map((it: any) => {
+    const vUnit = it.valorUnitarioEstimado || it.valorEstimado || it.valorMaximoUnitario || 0;
+    const q = it.quantidade || 1;
+    return {
+      numero: it.numeroItem || it.numero || 0,
+      descricao: it.descricao || "Item cadastrado no edital",
+      quantidade: q,
+      valorUnitario: vUnit,
+      valorTotal: it.valorTotal || (q * vUnit)
+    };
+  });
+
+  return {
+    edital: humanizedTitle,
+    orgao: org,
+    modalidade: modeName.includes("Pregão") ? "Pregão Eletrônico" : modeName,
+    objeto: rawObjeto,
+    valorEstimado: Number(rawValue),
+    dataSessao: purchaseDetails.dataAberturaSessaoPublica?.substring(0, 16) ||
+                purchaseDetails.dataEnvio?.substring(0, 16) ||
+                new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16),
+    cidade: purchaseDetails.unidadeOrgao?.municipioNome ||
+            purchaseDetails.municipioNome ||
+            purchaseDetails.orgaoEntidade?.municipioNome ||
+            "Brasília",
+    estado: purchaseDetails.unidadeOrgao?.ufSigla ||
+            purchaseDetails.ufSigla ||
+            purchaseDetails.orgaoEntidade?.ufSigla ||
+            "DF",
+    categoria: category,
+    unidadeCompradora: purchaseDetails.unidadeOrgao?.nomeUnidade ||
+                       purchaseDetails.unidadeSubrogada?.nomeUnidade ||
+                       "Unidade Gestora",
+    amparoLegal: purchaseDetails.amparoLegal?.descricao ||
+                 "Artigo 75, Inciso II da Lei Nº 14.133/2021",
+    idContratacaoPncp: purchaseDetails.numeroControlePNCP || "",
+    modoDisputa: purchaseDetails.modoDisputaNome || "Não informado",
+    dataInicioPropostas: purchaseDetails.dataInicioRecebimentoPropostas ?
+                         new Date(purchaseDetails.dataInicioRecebimentoPropostas).toLocaleString("pt-BR") :
+                         "",
+    dataFimPropostas: purchaseDetails.dataFimRecebimentoPropostas ?
+                      new Date(purchaseDetails.dataFimRecebimentoPropostas).toLocaleString("pt-BR") :
+                      "",
+    itensPncp: mappedItens,
+    arquivosPncp: mappedArquivos
+  };
+}.
+===== Arquivo: D:\licitapro\src\server\middleware\auth.ts =====
+import express from "express";
+import { verifyIdToken } from "../config/firebase";
+
+export interface AuthenticatedRequest extends express.Request {
+  user?: {
+    uid: string;
+    email?: string;
+    emailVerified?: boolean;
+  };
+}
+
+export async function authMiddleware(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({
+      error: "LicitaPro Security: Acesso não autorizado. Token de sessão do Google/Firebase ausente."
+    });
+  }
+
+  const token = authHeader.split(" ")[1];
+  const verifiedUser = await verifyIdToken(token);
+  if (!verifiedUser) {
+    return res.status(403).json({
+      error: "LicitaPro Security: Token expirado ou assinatura inválida. Por favor, refaça o login na aplicação."
+    });
+  }
+
+  (req as AuthenticatedRequest).user = verifiedUser;
+  next();
+}
+.
+===== Arquivo: D:\licitapro\src\server\middleware\rateLimiter.ts =====
+import express from "express";
+import { redis, isRedisConnected } from "../config/redis";
+
+const ipRequests = new Map<string, { count: number; resetTime: number }>();
+
+export async function rateLimiterMiddleware(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const ip = req.ip || (req.headers["x-forwarded-for"] as string) || "unknown-ip";
+  const limitWindowSeconds = 60;
+  const maxRequests = 60;
+  const now = Date.now();
+
+  // 1. Try Redis Rate-Limit counter matching
+  if (isRedisConnected && redis) {
+    try {
+      const redisKey = `ratelimit:${ip}`;
+      const multi = redis.multi();
+      multi.incr(redisKey);
+      multi.expire(redisKey, limitWindowSeconds);
+      const mResult = await multi.exec();
+      
+      if (mResult && mResult[0] && mResult[0][1] !== undefined) {
+        const currentCount = mResult[0][1] as number;
+        if (currentCount > maxRequests) {
+          return res.status(429).json({
+            error: "LicitaPro Security Shield: Limite de requisições excedido via Redis. Limite: 60 requisições/min por endereço IP para prevenção de abusos."
+          });
+        }
+        return next();
+      }
+    } catch (redisErr: any) {
+      console.warn("[LicitaPro RateLimiter] Falha na validação Redis, recorrendo ao cache local:", redisErr.message);
+    }
+  }
+
+  // 2. Local memory fallback implementation
+  const record = ipRequests.get(ip);
+  const windowMs = limitWindowSeconds * 1000;
+  if (!record) {
+    ipRequests.set(ip, { count: 1, resetTime: now + windowMs });
+    return next();
+  }
+
+  if (now > record.resetTime) {
+    ipRequests.set(ip, { count: 1, resetTime: now + windowMs });
+    return next();
+  }
+
+  record.count += 1;
+  if (record.count > maxRequests) {
+    return res.status(429).json({
+      error: "LicitaPro Security Shield: Limite de requisições excedido. Limite: 60 requisições/min por endereço IP para prevenção de abusos."
+    });
+  }
+  next();
+}
+.
+===== Arquivo: D:\licitapro\src\server\routes\api.ts =====
+import express from "express";
+import { authMiddleware } from "../middleware/auth.js";
+import { rateLimiterMiddleware } from "../middleware/rateLimiter.js";
+
+// ✅ IMPORTA DO INDEX (que re-exporta tudo)
+import {
+  handleScrapeBidding,
+  handlePredictBidding,
+  handleGenerateDocument,
+  handleGetAuditHistory,
+  handleGetUsageStats,
+  handlePncpImport,
+  handlePncpSearch
+} from "../controllers/index.js";
+
+const router = express.Router();
+
+// ============================================================
+// 1. SECURITY HEADERS
+// ============================================================
+router.use((req, res, next) => {
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction) {
+    res.setHeader(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://*.firebaseapp.com",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https:",
+        "font-src 'self' data:",
+        "connect-src 'self' https://*.firebaseio.com https://*.firebaseapp.com https://*.googleapis.com https://identitytoolkit.googleapis.com https://pncp.gov.br",
+        "frame-src 'self' https://*.firebaseapp.com",
+        "base-uri 'self'",
+        "form-action 'self'"
+      ].join("; ")
+    );
+  }
+  next();
+});
+
+// ============================================================
+// 2. RATE LIMITER
+// ============================================================
+router.use(rateLimiterMiddleware);
+
+// ============================================================
+// 3. ROTAS DE LICITAÇÃO
+// ============================================================
+router.post("/licitacoes/scrape", authMiddleware, handleScrapeBidding);
+router.post("/licitacoes/predict", authMiddleware, handlePredictBidding);
+router.post("/licitacoes/generate-document", authMiddleware, handleGenerateDocument);
+
+// ============================================================
+// 4. ROTAS PNCP (PORTAL NACIONAL DE CONTRATAÇÕES PÚBLICAS)
+// ============================================================
+router.post("/pncp/import", authMiddleware, handlePncpImport);    // ✅ POST
+router.get("/pncp/search", authMiddleware, handlePncpSearch);     // ✅ GET
+
+// ============================================================
+// 5. ROTAS DE AUDITORIA
+// ============================================================
+router.get("/ia/audit/history", authMiddleware, handleGetAuditHistory);
+router.get("/usage", authMiddleware, handleGetUsageStats);
+
+// ============================================================
+// 6. HEALTH CHECK
+// ============================================================
+router.get("/health", (req, res) => {
+  res.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || "development"
+  });
+});
+
+// ============================================================
+// 7. READINESS PROBE
+// ============================================================
+router.get("/ready", (req, res) => {
+  res.status(200).json({
+    status: "ready",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ============================================================
+// 8. LIVENESS PROBE
+// ============================================================
+router.get("/live", (req, res) => {
+  res.status(200).json({
+    status: "alive",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ============================================================
+// 9. ROTA 404
+// ============================================================
+router.use((req, res) => {
+  res.status(404).json({
+    error: "Rota não encontrada",
+    path: req.path,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
+});
+
+export default router;.
+===== Arquivo: D:\licitapro\src\server\services\audit.ts =====
+import crypto from "crypto";
+import { firebaseConfig } from "../config/firebase";
+
+export interface AIAuditLog {
+  id: string;
+  timestamp: string;
+  endpoint: string;
+  payload: any;
+  response: any;
+  isMock: boolean;
+  signature: string;
+  previousSignature: string;
+  citations?: { title: string; url: string }[];
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+}
+
+// In-memory registry state
+const inMemoryAuditLogs: AIAuditLog[] = [];
+let lastSignature = "GENESIS-INITIAL-BLOCK-HASH-OBC14133-2026-LICITAPRO";
+
+// Utility metrics state
+export const tokenUsageMetrics = {
+  totalRequests: 0,
+  totalPromptTokens: 0,
+  totalCompletionTokens: 0,
+  totalTokens: 0,
+  endpoints: {} as Record<string, { requests: number; tokens: number }>
+};
+
+/**
+ * Computes a SHA-256 hash for a block-log entry to guarantee compliance ledger immutability (Blockchain-Light)
+ */
+function computeBlockSignature(log: Omit<AIAuditLog, "signature">): string {
+  const payloadStr = JSON.stringify(log.payload || {});
+  const responseStr = JSON.stringify(log.response || {});
+  const rawBlock = `${log.id}|${log.timestamp}|${log.endpoint}|${payloadStr}|${responseStr}|${log.isMock}|${log.previousSignature}`;
+  return crypto.createHash("sha256").update(rawBlock).digest("hex");
+}
+
+/**
+ * Saves a single block-log entry to Firestore audit-trail using firestore API proxy
+ */
+export async function saveAuditLogToFirestore(idToken: string, log: AIAuditLog, userId: string) {
+  try {
+    const projectId = firebaseConfig.projectId;
+    if (!projectId || !idToken || idToken.startsWith("VIRTUAL_TOKEN_")) {
+      console.log(`[LicitaPro Audit] Sessão offline/virtual detectada para bloco ${log.id}. Mantendo log local em memória.`);
+      return;
+    }
+    const databaseId = firebaseConfig.firestoreDatabaseId || "(default)";
+    const logId = log.id;
+    
+    const body = {
+      fields: {
+        id: { stringValue: logId },
+        userId: { stringValue: userId },
+        endpoint: { stringValue: log.endpoint },
+        timestamp: { stringValue: log.timestamp },
+        payloadStr: { stringValue: JSON.stringify(log.payload) },
+        responseStr: { stringValue: JSON.stringify(log.response) },
+        isMock: { booleanValue: log.isMock },
+        signature: { stringValue: log.signature },
+        previousSignature: { stringValue: log.previousSignature },
+        citationsStr: { stringValue: JSON.stringify(log.citations || []) },
+        usageStr: { stringValue: JSON.stringify(log.usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 }) }
+      }
+    };
+
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents/ia_audit_logs/${logId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Authorization": `Bearer ${idToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      }
+    );
+
+    if (!res.ok) {
+      console.error("[LicitaPro Audit] Falha ao persistir log imutável no Firestore:", await res.text());
+    } else {
+      console.log(`[LicitaPro Audit] Bloco de auditoria imutável ${logId} assinado com sucesso.`);
+    }
+  } catch (err) {
+    console.error("[LicitaPro Audit] Erro ao sincronizar cadeia de auditoria no Firestore:", err);
+  }
+}
+
+/**
+ * Retrieves the verification history of logs from Firestore
+ */
+export async function getAuditLogsFromFirestore(idToken: string, userId: string): Promise<AIAuditLog[]> {
+  try {
+    const projectId = firebaseConfig.projectId;
+    if (!projectId || !idToken || idToken.startsWith("VIRTUAL_TOKEN_")) {
+      console.log("[LicitaPro Audit] Sessão offline/virtual. Retornando logs locais em memória.");
+      return getInMemoryAuditLogs();
+    }
+    const databaseId = firebaseConfig.firestoreDatabaseId || "(default)";
+    
+    const body = {
+      structuredQuery: {
+        from: [{ collectionId: "ia_audit_logs" }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "userId" },
+            op: "EQUAL",
+            value: { stringValue: userId }
+          }
+        }
+      }
+    };
+
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents:runQuery`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${idToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      }
+    );
+
+    if (!res.ok) {
+      console.error("[LicitaPro Audit] Falha ao ler logs estruturados do Firestore:", await res.text());
+      return [];
+    }
+
+    const data = await res.json();
+    const logs: AIAuditLog[] = [];
+    
+    for (const item of data) {
+      if (item.document) {
+        const fields = item.document.fields;
+        if (!fields) continue;
+
+        logs.push({
+          id: fields.id?.stringValue || "",
+          timestamp: fields.timestamp?.stringValue || "",
+          endpoint: fields.endpoint?.stringValue || "",
+          isMock: fields.isMock?.booleanValue || false,
+          signature: fields.signature?.stringValue || "",
+          previousSignature: fields.previousSignature?.stringValue || "",
+          payload: fields.payloadStr?.stringValue ? JSON.parse(fields.payloadStr.stringValue) : {},
+          response: fields.responseStr?.stringValue ? JSON.parse(fields.responseStr.stringValue) : {},
+          citations: fields.citationsStr?.stringValue ? JSON.parse(fields.citationsStr.stringValue) : [],
+          usage: fields.usageStr?.stringValue ? JSON.parse(fields.usageStr.stringValue) : undefined
+        });
+      }
+    }
+
+    // Sort by chronological timestamp
+    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return logs;
+  } catch (err) {
+    console.error("[LicitaPro Audit] Erro catastrófico ao sincronizar logs de auditoria:", err);
+    return [];
+  }
+}
+
+/**
+ * Appends a log entry inside the system with signature chain binding
+ */
+export function addAuditLogEntry(
+  endpoint: string,
+  payload: any,
+  response: any,
+  isMock: boolean,
+  citations?: { title: string; url: string }[],
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+): AIAuditLog {
+  const partialLog = {
+    id: "ia-log-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+    timestamp: new Date().toISOString(),
+    endpoint,
+    payload,
+    response,
+    isMock,
+    previousSignature: lastSignature,
+    citations,
+    usage
+  };
+
+  // Cryptographically seal the block with its ancestor signature hash (blockchain-light)
+  const signature = computeBlockSignature(partialLog);
+  const logEntry: AIAuditLog = { ...partialLog, signature };
+  
+  // Pivot the chain tip pointer
+  lastSignature = signature;
+
+  // Track operational metrics
+  const tokensObj = usage || {
+    promptTokens: isMock ? 350 : 1500,
+    completionTokens: isMock ? 50 : 400,
+    totalTokens: isMock ? 400 : 1900
+  };
+
+  tokenUsageMetrics.totalRequests += 1;
+  tokenUsageMetrics.totalPromptTokens += tokensObj.promptTokens;
+  tokenUsageMetrics.totalCompletionTokens += tokensObj.completionTokens;
+  tokenUsageMetrics.totalTokens += tokensObj.totalTokens;
+
+  if (!tokenUsageMetrics.endpoints[endpoint]) {
+    tokenUsageMetrics.endpoints[endpoint] = { requests: 0, tokens: 0 };
+  }
+  tokenUsageMetrics.endpoints[endpoint].requests += 1;
+  tokenUsageMetrics.endpoints[endpoint].tokens += tokensObj.totalTokens;
+
+  inMemoryAuditLogs.unshift(logEntry);
+  if (inMemoryAuditLogs.length > 200) {
+    inMemoryAuditLogs.pop();
+  }
+
+  return logEntry;
+}
+
+export function getInMemoryAuditLogs(): AIAuditLog[] {
+  return inMemoryAuditLogs;
+}
+.
+===== Arquivo: D:\licitapro\src\server\services\gemini.ts =====
+import { GoogleGenAI, Type } from "@google/genai";
+export { Type };
+import { withTimeout } from "../utils/timeout";
+
+// Ensure Gemini API key is configured
+const geminiKey = process.env.GEMINI_API_KEY;
+
+export const ai = new GoogleGenAI({
+  apiKey: geminiKey || "MOCK_KEY_SANS_SECRET",
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
+
+export const isGeminiConfigured = !!geminiKey;
+
+/**
+ * Executes a structured scrape/extraction of bidding contents using gemini-3.5-flash
+ */
+export async function extractBiddingMetadata(
+  textToAnalyze: string,
+  sanitizedUrl: string,
+  useUrlContextTool: boolean
+): Promise<{ parsed: any; isMock: boolean; usage: any }> {
+  if (!isGeminiConfigured) {
+    const mockData = {
+      edital: "Pregão Eletrônico SRP 35/2026",
+      orgao: "Tribunal Regional Federal (TRF) - 3ª Região",
+      modalidade: "Pregão Eletrônico",
+      objeto: "Contratação de empresa especializada para modernização tecnológica, suporte de infraestrutura em nuvem, e fornecimento de hardware de alto desempenho.",
+      valorEstimado: 2450000.00,
+      dataSessao: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().substring(0, 16),
+      cidade: "São Paulo",
+      estado: "SP",
+      categoria: "Tecnologia da Informação",
+      checklistRecomendado: [
+        "Certidão Conjunta Negativa de Débitos Federais",
+        "Balanço Patrimonial do último exercício social",
+        "Atestado de Capacidade Técnica operacional compatível",
+        "Certificado de Regularidade de Situação do FGTS (CRF)",
+        "Atestado de Vistoria ou Declaração de Conhecimento do Local",
+        "Declaração de cumprimento do Art. 7º, XXXIII da CF"
+      ],
+      competitorsEstimated: ["Softplan Planejamento", "Tech Solution Brasil Ltda", "GovTech Infra S.A."],
+      arquivosPncp: [
+        { id: "mock-doc-1", nome: "Edital_Concorrencia_35_2026.pdf", descricao: "Edital de Abertura Oficial", tamanho: "1.4 MB", linkUrl: "https://pncp.gov.br/app/editais?pagina=1" },
+        { id: "mock-doc-2", nome: "Projeto_Basico_Anexo_I.pdf", descricao: "Anexo Técnico e Requisitos", tamanho: "3.2 MB", linkUrl: "https://pncp.gov.br/app/editais?pagina=1" }
+      ],
+      disclaimer: "Aviso Legal - Lei 14.133/2021: Os dados cadastrais e checklists foram recuperados/gerados por inteligência artificial em modo offline."
+    };
+    return { parsed: mockData, isMock: true, usage: { promptTokens: 350, completionTokens: 50, totalTokens: 400 } };
+  }
+
+  const promptTemplate = `Analise o edital ou dados da licitação pública brasileira fornecidos e obtenha os seguintes campos estruturados em JSON:
+  1. 'edital': Identificação/Número do edital ou processo (ex: "Pregão Eletrônico nº 15/2026" ou "Concorrência 02/2026")
+  2. 'orgao': Nome do Órgão Licitante (ex: "Prefeitura Municipal de Campinas")
+  3. 'modalidade': Escolha uma das seguintes modalidades exatas: "Pregão Eletrônico", "Pregão Presencial", "Concorrência", "Tomada de Preços", "Inexigibilidade", "Dispensa", "Diálogo Competitivo", "Leilão"
+  4. 'objeto': Descrição resumida, rica e clara dos produtos ou serviços licitados.
+  5. 'valorEstimado': Valor orçado estimado em formato numérico (ex: 1250000.50). Retorne 0 se não encontrar.
+  6. 'dataSessao': Data e horário de abertura da sessão pública no formato YYYY-MM-DDTHH:MM (ex: "2026-06-25T09:00"). Se encontrar somente data, assumir horário comercial típico (ex: 09:00).
+  7. 'cidade': Cidade da sessão ou órgão.
+  8. 'estado': Estado em sigla de duas letras (ex: "SP", "RJ", "MG").
+  9. 'categoria': Escolha uma categoria correspondente: "Tecnologia da Informação", "Obras & Engenharia", "Serviços Gerais", "Materiais & Equipamentos", "Consultoria", "Saúde & Medicamentos", "Alimentação & Merenda", "Outros".
+  10. 'checklistRecomendado': Lista contendo entre 4 a 8 nomes de documentos cruciais e específicos exigidos no edital para habilitação técnica e jurídica (como Balanço Patrimonial, CRF FGTS, FGTS, Certidão Trabalhista, Atestado de Capacidade Técnica, etc.).
+  11. 'competitorsEstimated': Uma previsão de 2 a 4 empresas concorrentes realistas frequentes ou potenciais nesse segmento.
+  12. 'arquivosPncp': Lista contendo arquivos/documentos oficiais de editais ou anexos mencionados no texto. Cada arquivo deve ser um objeto com:
+      - 'id': Um ID único curto de string (ex: "doc-1")
+      - 'nome': Nome do arquivo encontrado (ex: "Edital_preg_ao_35.pdf" ou "Termo_de_Referencia.zip")
+      - 'descricao': Descrição do edital ou termo
+      - 'tamanho': Tamanho em KB/MB se houver no texto, senão "Indisponível"
+      - 'linkUrl': URL para download se explícita no texto, senão usar "https://pncp.gov.br/app/editais?pagina=1"`;
+
+  const contents = useUrlContextTool && sanitizedUrl
+    ? `${promptTemplate}\n\nAnalise o arquivo ou conteúdo principal da página pública contida na seguinte URL real: ${sanitizedUrl}`
+    : `${promptTemplate}\n\nTexto extraído do edital:\n\"\"\"\n${textToAnalyze.substring(0, 32000)}\n\"\"\"`;
+
+  const config: any = {
+    systemInstruction: "Você é um Analista de Licitações Sênior especialista em compras públicas brasileiras (Leis 14.133/2021 e 8.666/93). Extraia dados com precisão total, e monte o checklist de habilitação baseado no edital analisado.",
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        edital: { type: Type.STRING },
+        orgao: { type: Type.STRING },
+        modalidade: { type: Type.STRING },
+        objeto: { type: Type.STRING },
+        valorEstimado: { type: Type.NUMBER },
+        dataSessao: { type: Type.STRING },
+        cidade: { type: Type.STRING },
+        estado: { type: Type.STRING },
+        categoria: { type: Type.STRING },
+        checklistRecomendado: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING }
+        },
+        competitorsEstimated: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING }
+        },
+        arquivosPncp: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              nome: { type: Type.STRING },
+              descricao: { type: Type.STRING },
+              tamanho: { type: Type.STRING },
+              linkUrl: { type: Type.STRING }
+            },
+            required: ["id", "nome", "descricao", "tamanho", "linkUrl"]
+          }
+        }
+      },
+      required: [
+        "edital", "orgao", "modalidade", "objeto", "valorEstimado", 
+        "dataSessao", "cidade", "estado", "categoria", "checklistRecomendado", 
+        "competitorsEstimated", "arquivosPncp"
+      ]
+    }
+  };
+
+  if (useUrlContextTool && sanitizedUrl) {
+    config.tools = [{ urlContext: {} }];
+  }
+
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [{ parts: [{ text: contents }] }],
+      config: config
+    }),
+    30000,
+    "Extração de Edital"
+  );
+
+  const resultText = response.text;
+  if (!resultText) {
+    throw new Error("A IA gerou uma resposta vazia.");
+  }
+
+  const parsedJSON = JSON.parse(resultText.trim());
+  parsedJSON.disclaimer = "Aviso Legal - Lei 14.133/2021: Os dados cadastrais e as listas de habilitação foram consolidados de forma robótica por análise semântica assistida de IA.";
+
+  const usageStats = {
+    promptTokens: response.usageMetadata?.promptTokenCount || 1500,
+    completionTokens: response.usageMetadata?.candidatesTokenCount || 400,
+    totalTokens: response.usageMetadata?.totalTokenCount || 1900
+  };
+
+  return { parsed: parsedJSON, isMock: false, usage: usageStats };
+}
+
+/**
+ * Predicts bid strategy parameters using gemini-3.5-flash (Enhanced with Search Grounding / Citations)
+ */
+export async function predictBiddingOutcome(
+  sanitizedLicitacao: any,
+  competitors: any[],
+  historicalPrices: any[]
+): Promise<{ prediction: any; citations: any[]; isMock: boolean; usage: any }> {
+  if (!isGeminiConfigured) {
+    const mockPrediction = {
+      level: "MÉDIO-ALTO",
+      recommendedDiscount: "14.5% - 19.2%",
+      targetPrice: sanitizedLicitacao.valorEstimado ? (sanitizedLicitacao.valorEstimado * 0.83).toFixed(2) : "0.00",
+      winProbability: "68%",
+      competitorInsights: "As empresas fornecidas possuem grande atuação na região administrativa selecionada. Espera-se concorrência acirrada em lances eletrônicos. Recomenda-se focar na otimização de custos logísticos ou buscar isenção ICMS se aplicável.",
+      risks: [
+        "Vencimento iminente da CND Trabalhista durante o prazo estipulado.",
+        "Exigência de qualificação técnica com índice específico de liquidez corrente superior a 1.25.",
+        "Histórico de impugnações decorrentes de especificações restritivas no edital do órgão."
+      ],
+      strategy: "Entrar com proposta de abertura conservadora (ex: desconto de 5%) e programar lances automáticos (robô) calibrados com limite de margem líquida de 12%. Preparar as declarações de ME/EPP se enquadrado para usufruir da preferência de desempate."
+    };
+    return { prediction: mockPrediction, citations: [], isMock: true, usage: { promptTokens: 450, completionTokens: 100, totalTokens: 550 } };
+  }
+
+  const prompt = `Aja como o maior analista e modelador estratégico de licitações governamentais no Brasil.
+  Sua missão é realizar uma análise de inteligência preditiva profunda de mercado para o seguinte edital. Use a ferramenta do Google Search (buscando no PNCP, ComprasNet ou diários oficiais) para verificar os concorrentes conhecidos ou tendências de lances recentes do órgão ou segmento correspondente se preferir.
+
+  Dados do Edital:
+  - Órgão Licitante: ${sanitizedLicitacao.orgao}
+  - Edital Ref: ${sanitizedLicitacao.edital}
+  - Objeto: ${sanitizedLicitacao.objeto}
+  - Modalidade: ${sanitizedLicitacao.modalidade}
+  - Valor Orçado do Edital: R$ ${sanitizedLicitacao.valorEstimado}
+  - Região Física: ${sanitizedLicitacao.cidade} - ${sanitizedLicitacao.estado}
+  - Categoria: ${sanitizedLicitacao.categoria}
+
+  Concorrentes Conhecidos no Sistema:
+  ${JSON.stringify(competitors || [])}
+
+  Histórico de Preços de Referência da Categoria do Produto:
+  ${JSON.stringify(historicalPrices || [])}
+
+  Forneça um laudo de inteligência preditivo completo em formato JSON contendo exatamente as seguintes propriedades:
+  1. 'level': Nível estimado de competitividade ("BAIXO", "MÉDIO", "ALTO", "CRÍTICO/MUITO ALTO")
+  2. 'recommendedDiscount': Desconto estimado ótimo para vencer (ex: "12.0% - 18.5%")
+  3. 'targetPrice': Preço-alvo para formulação da proposta inicial otimizada (ex: R$ 2.050.000,00 ou valor equivalente calibrado)
+  4. 'winProbability': Probabilidade estatística aproximada de vitória baseado nas restrições de habilitação (ex: "72%")
+  5. 'competitorInsights': Análise resumida de comportamento e vulnerabilidade dos concorrentes digitados, detalhando qual tática é mais provável de funcionar no pregão eletrônico.
+  6. 'risks': Lista contendo 3 riscos cruciais (técnicos, regulatórios ou jurídicos) identificados para essa categoria ou objeto.
+  7. 'strategy': Estratégia de guerra tática passo a passo (preparo, lances automáticos, acompanhamento, fase recursal) calibrada para maximizar as chances.`;
+
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            level: { type: Type.STRING },
+            recommendedDiscount: { type: Type.STRING },
+            targetPrice: { type: Type.STRING },
+            winProbability: { type: Type.STRING },
+            competitorInsights: { type: Type.STRING },
+            risks: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            },
+            strategy: { type: Type.STRING }
+          },
+          required: ["level", "recommendedDiscount", "targetPrice", "winProbability", "competitorInsights", "risks", "strategy"]
+        },
+        tools: [{ googleSearch: {} }] // Activate Search Grounding to verify actual bidder actions!
+      }
+    }),
+    30000,
+    "Análise Preditiva"
+  );
+
+  const parsedJSON = JSON.parse(response.text?.trim() || "{}");
+
+  // Extract grounding chunks/citations
+  const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+  const citations = groundingChunks?.map((chunk: any) => ({
+    title: chunk.web?.title || "Diário Oficial / Portal de Compras",
+    url: chunk.web?.uri
+  })).filter((c: any) => c.url) || [];
+
+  if (citations.length > 0) {
+    parsedJSON._sources = citations;
+  }
+
+  const usageStats = {
+    promptTokens: response.usageMetadata?.promptTokenCount || 2000,
+    completionTokens: response.usageMetadata?.candidatesTokenCount || 500,
+    totalTokens: response.usageMetadata?.totalTokenCount || 2500
+  };
+
+  return { prediction: parsedJSON, citations, isMock: false, usage: usageStats };
+}
+
+/**
+ * Automatically crafts legal declarations and proposals using Lei 14.133 guidelines
+ */
+export async function draftGovernmentDocument(
+  docType: string,
+  sanitizedLicitacao: any,
+  sanitizedCompanyDetails: any
+): Promise<{ draft: any; isMock: boolean; usage: any }> {
+  if (!isGeminiConfigured) {
+    const mockDoc = {
+      documentTitle: `Declaração para ${sanitizedLicitacao.edital}`,
+      content: `DECLARAÇÃO DE COMPLASCÊNCIA E REGULARIDADE\n\nAo Órgão: ${sanitizedLicitacao.orgao}\nEdital: ${sanitizedLicitacao.edital}\n\nA empresa ${sanitizedCompanyDetails.name}, inscrita no CNPJ sob o nº ${sanitizedCompanyDetails.cnpj}, sediada no endereço ${sanitizedCompanyDetails.address}, por intermédio de seu representante legal, Sr(a). ${sanitizedCompanyDetails.partnerName}, portador(a) do CPF nº ${sanitizedCompanyDetails.partnerCPF}, declara para os devidos fins de habilitação e conformidade legal:\n\n1. Que cumprimos plenamente todos os requisitos vigentes exigidos na modalidade de ${sanitizedLicitacao.modalidade} referente ao objeto: "${sanitizedLicitacao.objeto}".\n2. Que nos termos do artigo 7º, inciso XXXIII, da Constituição Federal, não empregamos menores de dezoito anos em trabalho noturno, perigoso ou insalubre e nem menores de dezesseis anos em qualquer trabalho.\n3. Que inexiste fato superveniente impeditivo de nossa habilitação técnica ou jurídica.\n\nPor ser expressão da verdade, firmamos o presente termo.\n\n${sanitizedLicitacao.cidade || "Local"}, ${new Date().toLocaleDateString("pt-BR")}.\n\n_____________________________________________\n${sanitizedCompanyDetails.partnerName}\n${sanitizedCompanyDetails.partnerRole}`
+    };
+    return { draft: mockDoc, isMock: true, usage: { promptTokens: 250, completionTokens: 150, totalTokens: 400 } };
+  }
+
+  const prompt = `Gere uma minuta ou termo de declaração jurídica de habilitação oficial em língua portuguesa para participação em licitações públicas brasileiras com os seguintes dados:
+  - Tipo de Documento: ${docType} (ex: "Declaração de Habilitação Geral", "Declaração de Superveniência e CF Art 7", "Carta de Proposta Comercial Inicial", "Declaração de Enquadramento ME/EPP")
+  - Licitação: Edital ${sanitizedLicitacao.edital} do órgão ${sanitizedLicitacao.orgao}
+  - Objeto do Edital: ${sanitizedLicitacao.objeto}
+  - Modalidade: ${sanitizedLicitacao.modalidade}
+  
+  Dados Cadastrais da Empresa Requerente:
+  - Razão Social: ${sanitizedCompanyDetails.name}
+  - CNPJ: ${sanitizedCompanyDetails.cnpj}
+  - Endereço completo: ${sanitizedCompanyDetails.address}
+  - Representante Assinante: ${sanitizedCompanyDetails.partnerName} (${sanitizedCompanyDetails.partnerRole}), portador do CPF: ${sanitizedCompanyDetails.partnerCPF}
+
+  Instruções de Estilo:
+  Gere a minuta oficial com formatação impecável para diário e processos, com cabeçalho de intimação jurídica, citações adequadas da Lei de Licitações (Lei 14.133/2021 ou Lei 8.666/93 quando cabível) e espaçamento elegante para assinatura no fim.
+  
+  Retorne um JSON de resposta que contenha obrigatoriamente:
+  1. 'documentTitle': O título formal do documento (ex: "DECLARAÇÃO VITAL DE CUMPRIMENTO DOS REQUISITOS DE HABILITAÇÃO")
+  2. 'content': O corpo do texto estruturado e completo (texto cru puro formatado com quebras lineares elegantes, pronto para impressão e assinatura).`;
+
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            documentTitle: { type: Type.STRING },
+            content: { type: Type.STRING }
+          },
+          required: ["documentTitle", "content"]
+        }
+      }
+    }),
+    30000,
+    "Elaboração de Documento"
+  );
+
+  const parsedJSON = JSON.parse(response.text?.trim() || "{}");
+
+  const usageStats = {
+    promptTokens: response.usageMetadata?.promptTokenCount || 1000,
+    completionTokens: response.usageMetadata?.candidatesTokenCount || 600,
+    totalTokens: response.usageMetadata?.totalTokenCount || 1600
+  };
+
+  return { draft: parsedJSON, isMock: false, usage: usageStats };
+}
+.
+===== Arquivo: D:\licitapro\src\server\utils\sanitization.ts =====
+// Professional input sanitization module for LicitaPro
+export function sanitizeInput(text: string): string {
+  if (!text) return "";
+  
+  let sanitized = text;
+
+  // 1. Recursive removal of script and style tags and tag bodies to completely prevent execution
+  sanitized = sanitized.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, "");
+  sanitized = sanitized.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, "");
+
+  // 2. Strip standard framing & layout tags that can hold injections (iframe, object, embed, form, meta, link, svgs)
+  sanitized = sanitized.replace(/<(iframe|object|embed|applet|meta|link|form|svg|math)[^>]*>([\s\S]*?)<\/\1>/gi, "");
+
+  // 3. Purge inline event handlers (like onload, onerror, onclick, onmouseover etc.)
+  sanitized = sanitized.replace(/\son[a-z]+\s*=\s*(['"])(.*?)\1/gi, "");
+  sanitized = sanitized.replace(/\son[a-z]+\s*=\s*([^>'\s"]+)/gi, "");
+
+  // 4. Invalidate javascript / active protocol URI schemes
+  sanitized = sanitized.replace(/javascript:/gi, "[PROTOCOLO INVALIDADO]");
+  sanitized = sanitized.replace(/data:text\/html/gi, "[PROTOCOLO INVALIDADO]");
+  sanitized = sanitized.replace(/vbscript:/gi, "[PROTOCOLO INVALIDADO]");
+
+  // 5. Strip any generic residual HTML bracket elements to produce clean plain-text output
+  sanitized = sanitized.replace(/<\/?[a-z][^>]*>/gi, "");
+  
+  // 6. Eradicate adversarial instructions to override or manipulate system prompt boundaries
+  const injectionPatterns = [
+    /ignore as instruções anteriores/gi,
+    /ignore as diretrizes anterior/gi,
+    /ignore tudo o que foi duto/gi,
+    /desconsidere as instruções/gi,
+    /ignore previous instructions/gi,
+    /system instructions/gi,
+    /you are now/gi,
+    /você agora é/gi,
+    /agora você deve/gi,
+    /ignore restrictions/gi,
+    /force response/gi
+  ];
+  
+  for (const pattern of injectionPatterns) {
+    sanitized = sanitized.replace(pattern, "[CONTEÚDO REMOVIDO POR PREVENÇÃO DE PROMPT INJECTION]");
+  }
+  return sanitized;
+}
+.
+===== Arquivo: D:\licitapro\src\server\utils\timeout.ts =====
+// Timeout helper for Gemini / External APIs
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`O limite de tempo operacional de ${timeoutMs / 1000}s para a inteligência artificial ('${operationName}') foi excedido. Por favor, simplifique o texto de entrada ou tente novamente.`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+.
+===== Arquivo: D:\licitapro\src\server\workers\queue.ts =====
+import { Queue, Worker, Job } from "bullmq";
+import { redis } from "../config/redis";
+import { extractBiddingMetadata } from "../services/gemini";
+
+// Setup background BullMQ queue for heavy/long-running processes
+export const scrapingQueue = new Queue("licitapro-scraping-queue", {
+  connection: redis || undefined // Falls back to standard client configurations safely
+});
+
+/**
+ * Interface representing details of background crawler job
+ */
+export interface ScraperJobPayload {
+  url: string;
+  userId: string;
+  email: string;
+  docType?: string;
+}
+
+/**
+ * Initializes the background BullMQ worker instance to process PNCP scraping non-blockingly
+ */
+export function startBaddJobWorker() {
+  if (!redis) {
+    console.warn("[LicitaPro BullMQ] Conexão com Redis indisponível. Inicialização do Worker de fila ignorada.");
+    return null;
+  }
+
+  const worker = new Worker(
+    "licitapro-scraping-queue",
+    async (job: Job<ScraperJobPayload>) => {
+      console.log(`[LicitaPro worker] Iniciando Processamento assíncrono do Job #${job.id}:`, job.data);
+      const { url } = job.data;
+
+      // Simulate step increments
+      await job.updateProgress(10);
+
+      // Perform real background scraping utilizing Gemini's semantic extraction
+      const { parsed, usage } = await extractBiddingMetadata("", url, true);
+      await job.updateProgress(80);
+
+      console.log(`[LicitaPro worker] Concluído scraping assíncrono para ${url}. Consumo:`, usage);
+      await job.updateProgress(100);
+
+      return {
+        success: true,
+        data: parsed,
+        jobId: job.id,
+        processedAt: new Date().toISOString()
+      };
+    },
+    {
+      connection: redis,
+      concurrency: 5 // Process up to 5 concurrent jobs at once
+    }
+  );
+
+  worker.on("completed", (job) => {
+    console.log(`[LicitaPro worker] Fila de tarefas concluiu o Job #${job.id} com sucesso!`);
+  });
+
+  worker.on("failed", (job, err) => {
+    console.error(`[LicitaPro worker] Fila de tarefas falhou no processamento do Job #${job?.id}:`, err);
+  });
+
+  return worker;
+}
+
+/**
+ * Utility helper to schedule a new worker job inside the Redis-backed BullMQ queue
+ */
+export async function scheduleAsyncScraper(payload: ScraperJobPayload) {
+  try {
+    const job = await scrapingQueue.add("pncp-crawl-job", payload, {
+      attempts: 3, // Retry up to 3 times on unexpected failure
+      backoff: {
+        type: "exponential",
+        delay: 5000 // Exponential backoff starting from 5 seconds
+      }
+    });
+    console.log(`[LicitaPro worker] Novo job de scraping agendado com sucesso! ID: ${job.id}`);
+    return job;
+  } catch (err) {
+    console.error("[LicitaPro worker] Erro ao registrar job assíncrono na fila BullMQ:", err);
+    throw err;
+  }
+}

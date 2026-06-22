@@ -23,6 +23,10 @@ export const localDb = new LicitaProDatabase();
 // Helper to fetch all biddings for a specific virtual/guest user 
 export async function getLocalLicitacoes(userId: string = "guest-user"): Promise<Licitacao[]> {
   try {
+    // Se for guest-user, busca todos (para migração)
+    if (userId === "guest-user") {
+      return await localDb.licitacoes.toArray();
+    }
     return await localDb.licitacoes.where("userId").equals(userId).toArray();
   } catch (err) {
     console.error("Erro ao obter licitações do IndexedDB:", err);
@@ -54,6 +58,32 @@ export async function deleteLocalLicitacao(id: string): Promise<void> {
     await localDb.licitacoes.delete(id);
   } catch (err) {
     console.error("Erro ao excluir licitação do IndexedDB:", err);
+  }
+}
+
+// ✅ NOVO: Limpa todas as licitações locais (usado após migração)
+export async function clearLocalLicitacoes(): Promise<void> {
+  try {
+    await localDb.licitacoes.clear();
+    console.log("[IndexedDB] Todos os dados locais foram limpos com sucesso.");
+  } catch (err) {
+    console.error("[IndexedDB] Erro ao limpar dados locais:", err);
+    throw err;
+  }
+}
+
+// ✅ NOVO: Limpa licitações de um usuário específico
+export async function clearLocalLicitacoesByUser(userId: string): Promise<void> {
+  try {
+    const items = await localDb.licitacoes.where("userId").equals(userId).toArray();
+    const ids = items.map(item => item.id);
+    if (ids.length > 0) {
+      await localDb.licitacoes.bulkDelete(ids);
+      console.log(`[IndexedDB] ${ids.length} itens do usuário ${userId} foram removidos.`);
+    }
+  } catch (err) {
+    console.error("[IndexedDB] Erro ao limpar dados do usuário:", err);
+    throw err;
   }
 }
 

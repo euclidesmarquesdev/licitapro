@@ -5,8 +5,8 @@ import { getClientAuthToken } from "../firebase";
 import { 
   Search, ShieldCheck, Download, ExternalLink, Calendar, 
   MapPin, RefreshCw, ChevronLeft, ChevronRight, Check,
-  AlertTriangle, Info, FileText, LayoutList, Sparkles, Building2,
-  X, FileSpreadsheet
+  AlertTriangle, Info, FileText, Sparkles, Building2,
+  X, FileSpreadsheet, Eye
 } from "lucide-react";
 
 interface RastreadorPncpProps {
@@ -38,6 +38,19 @@ interface RastreadorPncpProps {
   runAIEnhanceForImport: boolean;
   setRunAIEnhanceForImport: (val: boolean) => void;
   setActiveMainView?: (view: "editais" | "fornecedores" | "rastreador") => void;
+  onSearch: (params: {
+    searchTerm: string;
+    uf: string;
+    modality: string;
+    dateRange: string;
+    valorMinimo: string;
+    valorMaximo: string;
+    page?: number;
+  }) => Promise<void>;
+  valorMinimo: string;
+  setValorMinimo: (val: string) => void;
+  valorMaximo: string;
+  setValorMaximo: (val: string) => void;
 }
 
 export default function RastreadorPncp({
@@ -68,23 +81,17 @@ export default function RastreadorPncp({
   setHasSearched,
   runAIEnhanceForImport,
   setRunAIEnhanceForImport,
-  setActiveMainView
+  setActiveMainView,
+  onSearch,
+  valorMinimo,
+  setValorMinimo,
+  valorMaximo,
+  setValorMaximo
 }: RastreadorPncpProps) {
   const [errorMsg, setErrorMsg] = useState("");
-
-  // Loading/feedback indicators for specific items imports
   const [importingId, setImportingId] = useState<string | null>(null);
   const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
-  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
 
-  // Smart state validator to prevent unneeded re-fetching when changing tab back & forth
-  const [lastSearchedFilters, setLastSearchedFilters] = useState({
-    uf: selectedUf,
-    modality: selectedModality,
-    dateRange: dateRange
-  });
-
-  // Predefined PNCP modalities (Mapped with precise backend codes in 14.133 context)
   const modalitiesList = [
     { value: "Todos", label: "Todas" },
     { value: "6", label: "Pregão" },
@@ -95,7 +102,6 @@ export default function RastreadorPncp({
     { value: "2", label: "Diálogo Competitivo" }
   ];
 
-  // Quick keywords search helper
   const quickKeywords = [
     { label: "Tecnologia", query: "tecnologia" },
     { label: "Computadores", query: "computador" },
@@ -106,195 +112,84 @@ export default function RastreadorPncp({
     { label: "Medicamentos", query: "medicamento" }
   ];
 
-  // Convert number of days to PNCP YYYYMMDD format
-  const getCalculatedDates = (daysAgo: string) => {
-    const today = new Date();
-    const past = new Date();
-    past.setDate(today.getDate() - parseInt(daysAgo));
-
-    const fmt = (d: Date) => {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      return `${year}-${month}-${day}`;
-    };
-
-    return {
-      start: fmt(past),
-      end: fmt(today)
-    };
-  };
-
-  // Perform PNCP searching fetch
-  const fetchPncpTenders = async (pageToFetch = 1, forceSearchTerm?: string) => {
-    setIsLoading(true);
-    setErrorMsg("");
-    setImportSuccessMessage(null);
-
-    try {
-      const token = await getClientAuthToken();
-      const dates = getCalculatedDates(dateRange);
-      const termToUse = forceSearchTerm !== undefined ? forceSearchTerm : searchTerm;
-
-      const params = new URLSearchParams({
-        pagina: String(pageToFetch),
-        dataInicial: dates.start,
-        dataFinal: dates.end,
-        uf: selectedUf,
-        codigoModalidade: selectedModality,
-        termo: termToUse
-      });
-
-      const directParams = new URLSearchParams({
-        dataInicial: dates.start.replace(/-/g, ""),
-        dataFinal: dates.end.replace(/-/g, ""),
-        pagina: String(pageToFetch),
-        tamanhoPagina: termToUse && termToUse.trim().length > 0 ? "100" : "15"
-      });
-
-      if (selectedModality && selectedModality !== "Todos" && selectedModality !== "") {
-        directParams.append("codigoModalidadeContratacao", selectedModality);
-      }
-      if (selectedUf && selectedUf !== "Todos" && selectedUf !== "") {
-        directParams.append("uf", selectedUf);
-      }
-
-      const directUrls = [
-        `https://api.pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`,
-        `https://dadosabertos.pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`,
-        `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?${directParams.toString()}`
-      ];
-
-      let directRawData: any = null;
-      let lastDirectErr: any = null;
-
-      // 1. Try direct browser call first (incredibly fast because the user is not inside a blocked cloud range, and api.pncp.gov.br supports CORS)
-      for (const url of directUrls) {
-        try {
-          console.log(`[PNCP Client] Tentando conexão direta para: ${url}`);
-          const directRes = await fetch(url, {
-            headers: {
-              "Accept": "application/json"
-            }
-          });
-          if (directRes.ok) {
-            directRawData = await directRes.json();
-            console.log("[PNCP Client] Conexão direta realizada com sucesso usando url:", url);
-            break;
-          } else {
-            lastDirectErr = new Error(`HTTP ${directRes.status}`);
-          }
-        } catch (err: any) {
-          console.warn(`[PNCP Client] Falha de conexão direta na URL ${url}:`, err.message);
-          lastDirectErr = err;
-        }
-      }
-
-      let data: any;
-
-      if (directRawData) {
-        let rawList = directRawData.data || [];
-
-        // Apply client-side keyword filtering matching the backend strategy
-        if (termToUse && termToUse.trim().length > 0) {
-          const cleanSearch = (str: string) => (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-          const keyword = cleanSearch(termToUse);
-          rawList = rawList.filter((item: any) => {
-            const orgaoName = cleanSearch(item.orgaoEntidade?.razaoSocial || "");
-            const objeto = cleanSearch(item.objetoCompra || item.objeto || "");
-            const numPncp = cleanSearch(item.numeroControlePNCP || "");
-            return orgaoName.includes(keyword) || objeto.includes(keyword) || numPncp.includes(keyword);
-          });
-        }
-
-        data = {
-          success: true,
-          data: {
-            data: rawList.slice(0, 15),
-            totalRegistros: termToUse && termToUse.trim().length > 0 ? rawList.length : (directRawData.totalRegistros || rawList.length),
-            totalPaginas: termToUse && termToUse.trim().length > 0 ? Math.max(1, Math.ceil(rawList.length / 15)) : (directRawData.totalPaginas || 1),
-            isMock: false
-          }
-        };
-      } else {
-        // 2. Fallback to our backend server search proxy if direct browser request fails completely
-        console.warn("[PNCP Client] Conexão direta falhou. Utilizando proxy do backend LicitaPro...");
-        const response = await fetch(`/api/pncp/search?${params.toString()}`, {
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
-        });
-
-        const textResponse = await response.text();
-        if (response.ok) {
-          data = JSON.parse(textResponse);
-        } else {
-          try {
-            const parsedErr = JSON.parse(textResponse);
-            throw new Error(parsedErr.error || `Servidor de busca retornou erro ${response.status}`);
-          } catch (e: any) {
-            throw new Error(e.message || `Servidor de busca retornou erro ${response.status}`);
-          }
-        }
-      }
-
-      if (data.success && data.data) {
-        const payload = data.data;
-        setResults(payload.data || payload.resultado || []);
-        setTotalRecords(payload.totalRegistros || 0);
-        setTotalPages(payload.totalPaginas || 1);
-        setCurrentPage(pageToFetch);
-        setIsOfflineFallback(!!payload.isMock);
-      } else {
-        setResults([]);
-        setTotalRecords(0);
-        setTotalPages(1);
-        setIsOfflineFallback(false);
-      }
-    } catch (err: any) {
-      console.error("[PNCP Tracker Client] Search error:", err);
-      setErrorMsg(err.message || "Erro de rede ao conectar-se à API Provedora do PNCP.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Run search only under correct triggers, avoiding mount noise
+  // ✅ BUSCA INICIAL AUTOMÁTICA
   useEffect(() => {
     if (!hasSearched) {
-      fetchPncpTenders(1);
+      console.log("[RastreadorPncp] Busca inicial automática");
+      onSearch({
+        searchTerm: searchTerm,
+        uf: selectedUf,
+        modality: selectedModality,
+        dateRange: dateRange,
+        valorMinimo: valorMinimo,
+        valorMaximo: valorMaximo,
+        page: 1
+      });
       setHasSearched(true);
-      setLastSearchedFilters({ uf: selectedUf, modality: selectedModality, dateRange: dateRange });
-      return;
     }
+  }, []);
 
-    const didFiltersChange =
-      selectedUf !== lastSearchedFilters.uf ||
-      selectedModality !== lastSearchedFilters.modality ||
-      dateRange !== lastSearchedFilters.dateRange;
+  const handleSearch = () => {
+    onSearch({
+      searchTerm: searchTerm,
+      uf: selectedUf,
+      modality: selectedModality,
+      dateRange: dateRange,
+      valorMinimo: valorMinimo,
+      valorMaximo: valorMaximo,
+      page: 1
+    });
+  };
 
-    if (didFiltersChange) {
-      fetchPncpTenders(1);
-      setLastSearchedFilters({ uf: selectedUf, modality: selectedModality, dateRange: dateRange });
-    }
-  }, [selectedUf, selectedModality, dateRange]);
+  const handleKeywordClick = (word: string) => {
+    setSearchTerm(word);
+    onSearch({
+      searchTerm: word,
+      uf: selectedUf,
+      modality: selectedModality,
+      dateRange: dateRange,
+      valorMinimo: valorMinimo,
+      valorMaximo: valorMaximo,
+      page: 1
+    });
+  };
 
   const handleKeyboardSearch = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
-      fetchPncpTenders(1);
+      handleSearch();
     }
   };
 
-  // Import selected tender from PNCP directly
+  const handleClearFilters = () => {
+    setSearchTerm("");
+    setSelectedUf("Todos");
+    setSelectedModality("Todos");
+    setDateRange("15");
+    setValorMinimo("");
+    setValorMaximo("");
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    onSearch({
+      searchTerm: searchTerm,
+      uf: selectedUf,
+      modality: selectedModality,
+      dateRange: dateRange,
+      valorMinimo: valorMinimo,
+      valorMaximo: valorMaximo,
+      page: newPage
+    });
+  };
+
   const handleImportTender = async (pncpId: string) => {
-    if (importingId) return; // ignore double clicks
+    if (importingId) return;
     setImportingId(pncpId);
     setErrorMsg("");
     setImportSuccessMessage(null);
 
     try {
       const token = await getClientAuthToken();
-      // Hit existing import endpoint
       const response = await fetch("/api/pncp/import", {
         method: "POST",
         headers: {
@@ -313,7 +208,7 @@ export default function RastreadorPncp({
         body = JSON.parse(importText);
       } catch (jsonErr) {
         if (!response.ok) {
-          throw new Error(`Erro do servidor de importação (Status ${response.status}). O sistema federal PNCP pode estar sobrecarregado.`);
+          throw new Error(`Erro do servidor de importação (Status ${response.status}).`);
         } else {
           throw new Error("Resposta incompreensível do servidor de importação.");
         }
@@ -326,7 +221,6 @@ export default function RastreadorPncp({
       if (body.success && body.data) {
         const d = body.data;
 
-        // Build checklist items
         const rawChecklist = d.checklistRecomendado || [
           "Certidão de Débito Federal",
           "FGTS Regularidade CRF",
@@ -342,7 +236,6 @@ export default function RastreadorPncp({
           obs: "Vínculo regulador PNCP"
         }));
 
-        // Build suppliers list from items
         const rawItems = d.itensPncp || [];
         const finalSuppliers = rawItems.map((it: any, index: number) => ({
           id: `pncp-sup-tr-${index}-${Date.now()}`,
@@ -354,7 +247,6 @@ export default function RastreadorPncp({
           notes: `Quantidade solicitada: ${it.quantidade} | Unitário Máximo: R$ ${it.valorUnitario?.toFixed(2)} | Total estimado: R$ ${it.valorTotal?.toFixed(2)}`
         }));
 
-        // Build estimated competitors
         const rawCompetitors = d.competitorsEstimated || ["Distribuidor Especializado S.A.", "GovTech Soluções de Escopo"];
         const finalCompetitors = rawCompetitors.map((name: string, index: number) => ({
           id: `cp-track-${index}-${Date.now()}`,
@@ -363,7 +255,6 @@ export default function RastreadorPncp({
           status: "perdeu" as const
         }));
 
-        // Save a clean, premium Licitacao object
         const newLicitacao: Licitacao = {
           id: `pncp-${d.idContratacaoPncp || pncpId.replace(/\D/g, "")}-${Date.now()}`,
           userId: user ? user.uid : "guest-user",
@@ -416,17 +307,15 @@ export default function RastreadorPncp({
 
         await onSaveNewLicitacao(newLicitacao);
 
-        // Open the imported bidding notice immediately
         onOpenLicitacao(newLicitacao.id);
         if (setActiveMainView) {
           setActiveMainView("editais");
         }
 
         setImportSuccessMessage(
-          `🚀 Sucesso absoluto! O edital "${d.edital}" do órgão "${d.orgao}" foi importado com todos os seus ${rawItems.length} lotes/itens oficiais e ${d.arquivosPncp?.length || 0} arquivos originais para download.`
+          `🚀 Sucesso absoluto! O edital "${d.edital}" do órgão "${d.orgao}" foi importado com todos os seus ${rawItems.length} lotes/itens oficiais.`
         );
 
-        // Scroll up to show success feedback
         window.scrollTo({ top: 300, behavior: "smooth" });
       }
     } catch (err: any) {
@@ -437,25 +326,18 @@ export default function RastreadorPncp({
     }
   };
 
-  const handleKeywordClick = (word: string) => {
-    setSearchTerm(word);
-    fetchPncpTenders(1, word);
-  };
-
-  // Format beautiful state / city location string
+  // Funções de formatação
   const formatLocation = (item: any): string => {
     const uf = item.unidadeOrgao?.ufSigla || item.ufSigla || item.orgaoEntidade?.ufSigla || "BR";
     const mun = item.unidadeOrgao?.municipioNome || item.orgaoEntidade?.municipioNome || item.municipioNome || "";
     
     if (mun) {
-      // Capitalize city name nicely
       const cleanMun = mun.toLowerCase().replace(/(^\w{1})|(\s+\w{1})/g, (letter: string) => letter.toUpperCase());
       return `${cleanMun} - ${uf}`;
     }
     return `Estado: ${uf}`;
   };
 
-  // Format humanized title of a tender (e.g., Pregão Eletrônico SRP 12/2026)
   const formatHumanizedTitle = (item: any): string => {
     const mod = item.modalidadeNome || "Licitação";
     let cleanMod = mod.replace(/\s*-\s*/, " ").trim();
@@ -492,7 +374,6 @@ export default function RastreadorPncp({
     return title;
   };
 
-  // Dynamic category detector matching filter options exactly
   const getCategoryForPncpItem = (item: any): string => {
     const rawObjeto = item.objetoCompra || item.objeto || "";
     const objLower = rawObjeto.toLowerCase();
@@ -539,7 +420,6 @@ export default function RastreadorPncp({
     }
   };
 
-  // Helpers to format dates and currencies elegantly
   const formatValue = (val: number) => {
     if (!val || val === 0) return "Valor sob cotação / Não informado";
     return new Intl.NumberFormat("pt-BR", {
@@ -567,12 +447,11 @@ export default function RastreadorPncp({
 
   return (
     <div className="space-y-6 font-sans">
-      {/* Search Header Banner */}
+      {/* Header */}
       <div className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white relative overflow-hidden shadow-lg border border-slate-800">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
           <Building2 className="w-48 h-48 text-white" />
         </div>
-        
         <div className="relative z-10 max-w-4xl space-y-3">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[10px] font-bold uppercase tracking-widest">
             <Sparkles className="w-3.5 h-3.5 animate-pulse text-blue-400" />
@@ -582,25 +461,21 @@ export default function RastreadorPncp({
             Consultas em Tempo Real no PNCP
           </h2>
           <p className="text-slate-300 text-xs md:text-sm max-w-2xl leading-relaxed">
-            Navegue por toda a base de dados oficial do Brasil no <strong>Portal Nacional de Contratações Públicas</strong>. Filtre por localidade, ramo de atividade e importe compras federais, estaduais e municipais com arquivos, itens e IA!
+            Navegue por toda a base de dados oficial do Brasil no <strong>Portal Nacional de Contratações Públicas</strong>.
           </p>
         </div>
       </div>
 
-      {/* Control Search Panel Filters */}
+      {/* Filtros */}
       <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          
-          {/* Text keyword input */}
-          <div className="lg:col-span-4">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              Palavra-Chave ou Objeto
-            </label>
+          <div className="lg:col-span-3">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Palavra-Chave</label>
             <div className="relative flex items-center">
               <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Ex: tecnologia, software, asfalto, limpeza..."
+                placeholder="Ex: tecnologia, software, asfalto..."
                 className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:bg-white focus:ring-1 focus:ring-blue-500 transition"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -609,12 +484,8 @@ export default function RastreadorPncp({
               {searchTerm && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchTerm("");
-                    fetchPncpTenders(1, "");
-                  }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-450 hover:text-red-500 hover:bg-slate-150 rounded-full transition cursor-pointer"
-                  title="Limpar pesquisa e resetar filtro"
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-450 hover:text-red-500 hover:bg-slate-150 rounded-full transition"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -622,38 +493,26 @@ export default function RastreadorPncp({
             </div>
           </div>
 
-          {/* Estado Selector */}
           <div className="lg:col-span-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              Estado UF
-            </label>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">UF</label>
             <select
               className="w-full text-xs font-bold text-gray-700 bg-slate-50 border border-slate-200 rounded-xl p-3 cursor-pointer"
               value={selectedUf}
-              onChange={(e) => {
-                setSelectedUf(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setSelectedUf(e.target.value)}
             >
-              <option value="Todos">Brasil Inteiro (Todos)</option>
+              <option value="Todos">Todos</option>
               {ESTADOS_BRASIL.map(uf => (
                 <option key={uf} value={uf}>{uf}</option>
               ))}
             </select>
           </div>
 
-          {/* Modalidade Selector */}
-          <div className="lg:col-span-3">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              Modalidade
-            </label>
+          <div className="lg:col-span-2">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Modalidade</label>
             <select
               className="w-full text-xs font-bold text-gray-700 bg-slate-50 border border-slate-200 rounded-xl p-3 cursor-pointer"
               value={selectedModality}
-              onChange={(e) => {
-                setSelectedModality(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setSelectedModality(e.target.value)}
             >
               {modalitiesList.map(item => (
                 <option key={item.value} value={item.value}>{item.label}</option>
@@ -661,50 +520,62 @@ export default function RastreadorPncp({
             </select>
           </div>
 
-          {/* Date Window */}
-          <div className="lg:col-span-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              Publicado Há
-            </label>
+          <div className="lg:col-span-3">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Valor (R$)</label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Mínimo"
+                min="0"
+                className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:bg-white focus:ring-1 focus:ring-blue-500 transition"
+                value={valorMinimo}
+                onChange={(e) => setValorMinimo(e.target.value)}
+              />
+              <input
+                type="number"
+                placeholder="Máximo"
+                min="0"
+                className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:bg-white focus:ring-1 focus:ring-blue-500 transition"
+                value={valorMaximo}
+                onChange={(e) => setValorMaximo(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="lg:col-span-1">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Período</label>
             <select
               className="w-full text-xs font-bold text-gray-700 bg-slate-50 border border-slate-200 rounded-xl p-3 cursor-pointer"
               value={dateRange}
-              onChange={(e) => {
-                setDateRange(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setDateRange(e.target.value)}
             >
-              <option value="15">Últimos 15 dias</option>
-              <option value="30">Últimos 30 dias</option>
-              <option value="60">Últimos 60 dias (Recomendado)</option>
-              <option value="90">Últimos 90 dias</option>
-              <option value="180">Últimos 6 meses</option>
+              <option value="15">15 dias</option>
+              <option value="30">30 dias</option>
+              <option value="60">60 dias</option>
+              <option value="90">90 dias</option>
+              <option value="180">180 dias</option>
             </select>
           </div>
 
-          {/* Search Trigger and Refresh Buttons */}
           <div className="lg:col-span-1 flex items-end gap-2">
             <button
-              onClick={() => fetchPncpTenders(1)}
-              className="flex-1 p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/10 transition flex items-center justify-center cursor-pointer"
-              title="Buscar Editais"
+              onClick={handleSearch}
+              disabled={isLoading}
+              className="flex-1 p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/10 transition flex items-center justify-center cursor-pointer"
             >
               <Search className="w-4 h-4" />
             </button>
             <button
-              onClick={() => fetchPncpTenders(currentPage || 1)}
-              disabled={isLoading}
-              className="p-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/10 transition flex items-center justify-center cursor-pointer"
-              title="Atualizar Página Atual"
+              onClick={handleClearFilters}
+              className="p-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
             >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Quick keywords suggestions */}
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-slate-400 font-bold block pr-1 uppercase text-[10px] tracking-wider">Atalhos de Temas:</span>
+          <span className="text-slate-400 font-bold block pr-1 uppercase text-[10px] tracking-wider">Atalhos:</span>
           {quickKeywords.map((kw, i) => (
             <button
               key={i}
@@ -720,7 +591,6 @@ export default function RastreadorPncp({
           ))}
         </div>
 
-        {/* AI toggle settings right in page */}
         <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-150">
           <input
             type="checkbox"
@@ -730,22 +600,16 @@ export default function RastreadorPncp({
             onChange={(e) => setRunAIEnhanceForImport(e.target.checked)}
           />
           <label htmlFor="ai-enhance-tracker" className="text-xs text-slate-700 leading-relaxed cursor-pointer font-medium">
-            🧬 <strong className="text-indigo-950">Com Enriquecimento Estratégico IA:</strong> Ao importar, analisar o edital com Gemini para identificar documentos cruciais requeridos de habilitação e predizer potenciais competidores comerciais.
+            🧬 <strong className="text-indigo-950">Enriquecimento IA:</strong> Analisar edital com Gemini
           </label>
         </div>
       </div>
 
-      {/* Success / Error Messages Block */}
+      {/* Messages */}
       {importSuccessMessage && (
         <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-950 flex gap-3 shadow-xs">
           <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
-          <div className="space-y-2">
-            <p className="text-xs font-bold leading-normal">{importSuccessMessage}</p>
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded font-black font-mono">PNCP SUCESS_OK</span>
-              <p className="text-[10px] text-emerald-800">Tabelas de itens e download de PDFs de termos unificados!</p>
-            </div>
-          </div>
+          <p className="text-xs font-bold leading-normal">{importSuccessMessage}</p>
         </div>
       )}
 
@@ -753,196 +617,142 @@ export default function RastreadorPncp({
         <div className="p-4.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-950 flex gap-3 text-xs">
           <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
           <div>
-            <strong className="block font-bold">Problema de Conexão ou Consulta:</strong>
-            <p className="mt-0.5 text-slate-600 leading-normal">{errorMsg}</p>
+            <strong className="block font-bold">Erro:</strong>
+            <p className="mt-0.5 text-slate-600">{errorMsg}</p>
           </div>
         </div>
       )}
 
-      {/* Tracker Status Bar Summary */}
-      <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 font-sans">
+      {/* Status */}
+      <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
         <div className="flex items-center gap-2">
           <Info className="w-4.5 h-4.5 text-blue-500" />
-          <span>Filtros ativos retornando o total de <strong className="text-slate-800">{totalRecords}</strong> contratações públicas no PNCP.</span>
+          <span>Total: <strong className="text-slate-800">{totalRecords}</strong> contratações</span>
         </div>
-        <div className="flex items-center gap-2">
-          <a
-            href="https://pncp.gov.br/app/editais"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1.5 bg-slate-950 text-white rounded-xl font-extrabold flex items-center gap-1.5 hover:bg-slate-850 hover:shadow-md transition text-[10px]"
-            title="Acessar o portal oficial do governo"
-          >
-            <ExternalLink className="w-3.5 h-3.5 text-blue-400" /> Acessar Portal Oficial PNCP
-          </a>
-          <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded font-bold font-mono text-[10px]">100% Conectado</span>
-          <span className="text-slate-400">Portal PNCP Oficial</span>
-        </div>
+        <a
+          href="https://pncp.gov.br/app/editais"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-3 py-1.5 bg-slate-950 text-white rounded-xl font-extrabold flex items-center gap-1.5 hover:bg-slate-850 transition text-[10px]"
+        >
+          <ExternalLink className="w-3.5 h-3.5 text-blue-400" /> Portal PNCP
+        </a>
       </div>
 
-      {/* Main Grid View list of results */}
+      {/* Results */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[1, 2, 4, 5, 6].map((it) => (
+          {[1, 2, 3, 4].map((it) => (
             <div key={it} className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 animate-pulse">
-              <div className="flex items-center justify-between">
-                <div className="h-4 bg-slate-200 rounded w-1/4"></div>
-                <div className="h-4 bg-slate-200 rounded w-1/12"></div>
-              </div>
-              <div className="space-y-2">
-                <div className="h-5 bg-slate-200 rounded w-4/5"></div>
-                <div className="h-4 bg-slate-200 rounded w-3/4"></div>
-              </div>
+              <div className="h-4 bg-slate-200 rounded w-1/4"></div>
+              <div className="h-5 bg-slate-200 rounded w-4/5"></div>
               <div className="h-20 bg-slate-100 rounded"></div>
-              <div className="flex items-center justify-between">
-                <div className="h-4 bg-slate-200 rounded w-1/3"></div>
-                <div className="h-10 bg-blue-200 rounded w-1/3"></div>
-              </div>
+              <div className="h-10 bg-blue-200 rounded w-1/3"></div>
             </div>
           ))}
         </div>
       ) : results.length === 0 ? (
         <div className="bg-white border border-slate-200/80 p-16 rounded-3xl text-center">
           <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <h3 className="font-bold text-slate-800 text-base">Nenhum resultado retornado do PNCP</h3>
-          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-            Experimente reduzir os termos de pesquisa, trocar o Estado de pesquisa para "Todos" ou aumentar a janela de datas de publicação do edital!
-          </p>
+          <h3 className="font-bold text-slate-800 text-base">Nenhum resultado</h3>
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">Ajuste os filtros e tente novamente.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {results.map((item) => {
             const alreadyImported = licitacoes.some(l => l.idContratacaoPncp === item.numeroControlePNCP);
             const isImportingThis = importingId === item.numeroControlePNCP;
+            const importedLicitacao = licitacoes.find(l => l.idContratacaoPncp === item.numeroControlePNCP);
 
             return (
               <div 
                 key={item.numeroControlePNCP} 
-                className={`bg-white border rounded-3xl p-6 shadow-xs flex flex-col justify-between hover:border-slate-300 hover:shadow-md transition duration-200 ${
-                  alreadyImported ? "bg-slate-50 border-emerald-100 opacity-90" : "border-slate-200/80"
+                className={`bg-white border rounded-3xl p-6 shadow-xs flex flex-col justify-between hover:border-slate-300 transition duration-200 ${
+                  alreadyImported ? "bg-emerald-50/30 border-emerald-300" : "border-slate-200/80"
                 }`}
               >
-                <div className="space-y-4">
-                  {/* Card head metadata */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full font-bold text-[10px] uppercase">
-                        {item.modalidadeNome || "Licitação Pública"}
-                      </span>
-                      <span className={`px-2.5 py-1 border rounded-full font-bold text-[10px] uppercase ${getCategoryTheme(getCategoryForPncpItem(item))}`} title="Segmento de Categoria">
-                        {getCategoryForPncpItem(item)}
-                      </span>
-                      <span className="px-2.5 py-1 bg-rose-50 text-rose-800 border border-rose-100 rounded-full font-extrabold text-[10px] uppercase flex items-center gap-1" title="Unidade da Federação">
-                        <MapPin className="w-3 h-3 text-rose-600" />
-                        {item.unidadeOrgao?.ufSigla || item.ufSigla || item.orgaoEntidade?.ufSigla || "BR"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <a
-                        href={`https://pncp.gov.br/app/editais/${item.orgaoEntidade?.cnpj || "000000"}/${item.anoCompra || "2024"}/${item.sequencialCompra || item.sequencialContratacao || "1"}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-full font-bold text-[9px] flex items-center gap-1 transition"
-                        title="Abrir diretamente no Portal Oficial"
-                      >
-                        <ExternalLink className="w-3 h-3 text-blue-500" /> Ver Portal
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Aesthetic Bidding Humanized Title */}
-                  <div className="space-y-1">
-                    <div className="flex items-start gap-1.5 text-slate-800">
-                      <FileSpreadsheet className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-                      <h3 className="font-extrabold text-slate-900 text-sm md:text-base leading-snug">
-                        {formatHumanizedTitle(item)}
-                      </h3>
-                    </div>
-                  </div>
-
-                  {/* ID / Name Copy block - Now cleanly labeled for search/reference only */}
-                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 bg-slate-50 rounded-xl p-2.5 border border-slate-150">
-                    <span className="truncate max-w-[280px]" title="ID para Pesquisa">
-                      <strong className="text-slate-400">ID Pesquisa:</strong> {item.numeroControlePNCP}
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full font-bold text-[10px] uppercase">
+                      {item.modalidadeNome || "Licitação"}
                     </span>
+                    <span className={`px-2.5 py-1 border rounded-full font-bold text-[10px] uppercase ${getCategoryTheme(getCategoryForPncpItem(item))}`}>
+                      {getCategoryForPncpItem(item)}
+                    </span>
+                  </div>
+
+                  <h3 className="font-extrabold text-slate-900 text-sm md:text-base leading-snug">
+                    {formatHumanizedTitle(item)}
+                  </h3>
+
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 bg-slate-50 rounded-xl p-2 border border-slate-150">
+                    <span className="truncate">ID: {item.numeroControlePNCP}</span>
                     <button 
                       onClick={() => {
                         navigator.clipboard.writeText(item.numeroControlePNCP || "");
-                        alert("ID de contratação copiado para a área de transferência!");
+                        alert("ID copiado!");
                       }} 
-                      className="text-blue-600 hover:text-blue-800 font-bold cursor-pointer hover:underline shrink-0 px-1 ml-1"
+                      className="text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
                     >
                       Copiar
                     </button>
                   </div>
 
-                  {/* Location (UF / Municipality) and Government Agency */}
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="px-2.5 py-1 bg-red-50 text-red-700 border border-red-100 rounded-full font-bold text-[10px] flex items-center gap-1.5">
-                        <MapPin className="w-3 h-3 text-red-500 shrink-0" />
-                        {formatLocation(item)}
-                      </span>
-                    </div>
-
-                    <h4 className="font-extrabold text-slate-700 text-xs line-clamp-1 flex items-center gap-1.5 mt-1" title={item.orgaoEntidade?.razaoSocial}>
-                      <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      {item.orgaoEntidade?.razaoSocial || "Órgão do Governo"}
-                    </h4>
-                    
-                    <div className="bg-yellow-50/20 p-2.5 rounded-xl border border-yellow-105/40">
-                      <label className="block text-[8px] font-bold text-yellow-800 uppercase tracking-widest mb-0.5">Objeto Desbravado</label>
-                      <p className="text-xs text-slate-600 leading-normal line-clamp-3 overflow-hidden text-ellipsis" title={item.objetoCompra || item.objeto}>
-                        {item.objetoCompra || item.objeto || "Sem objeto detalhado disponível."}
-                      </p>
-                    </div>
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="w-3 h-3 text-red-500" />
+                    <span className="text-xs font-bold text-slate-700">{formatLocation(item)}</span>
                   </div>
 
-                  {/* Dates list (3-column, including Ultima Atualizacao) */}
-                  <div className="grid grid-cols-3 gap-2 text-[10px] py-1 text-slate-500 font-sans border-t border-b border-slate-100">
+                  <p className="text-xs text-slate-600 line-clamp-2">
+                    {item.objetoCompra || item.objeto || "Sem descrição"}
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-2 text-[10px] py-1 text-slate-500 border-t border-slate-100">
                     <div>
                       <span className="block text-[8px] font-black uppercase text-slate-400">Publicação</span>
-                      <p className="font-semibold text-slate-700 mt-0.5 truncate">{formatPncpDateString(item.dataPublicacaoPncp || item.dataEnvio)}</p>
+                      <p className="font-semibold text-slate-700">{formatPncpDateString(item.dataPublicacaoPncp || item.dataEnvio)}</p>
                     </div>
                     <div>
-                      <span className="block text-[8px] font-black uppercase text-slate-400">Sessão Pública</span>
-                      <p className="font-black text-indigo-700 mt-0.5 truncate">{formatPncpDateString(item.dataAberturaProposta || item.dataAberturaSessaoPublica)}</p>
+                      <span className="block text-[8px] font-black uppercase text-slate-400">Sessão</span>
+                      <p className="font-black text-indigo-700">{formatPncpDateString(item.dataAberturaProposta)}</p>
                     </div>
                     <div>
                       <span className="block text-[8px] font-black uppercase text-slate-400">Atualização</span>
-                      <p className="font-bold text-emerald-700 mt-0.5 truncate">{formatPncpDateString(item.dataAtualizacao || item.dataAtualizacaoGlobal || item.dataPublicacaoPncp)}</p>
+                      <p className="font-bold text-emerald-700">{formatPncpDateString(item.dataAtualizacao)}</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Footer and trigger values */}
-                <div className="mt-5 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <label className="block text-[9px] font-black uppercase text-slate-400">Valor Máximo Estimado</label>
+                    <label className="block text-[9px] font-black uppercase text-slate-400">Valor</label>
                     <span className="text-sm font-black text-slate-900 block mt-0.5">
                       {formatValue(item.valorTotalEstimado || item.valorEstimado)}
                     </span>
                   </div>
 
                   <div className="flex gap-2">
-                    {/* View external link */}
                     <a
                       href={`https://pncp.gov.br/app/editais/${item.orgaoEntidade?.cnpj || "000000"}/${item.anoCompra || "2024"}/${item.sequencialCompra || item.sequencialContratacao || "1"}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer"
-                      title="Ver Link do Edital Oficial no PNCP"
+                      className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
                     >
                       <ExternalLink className="w-4 h-4 text-slate-500" />
                     </a>
 
-                    {/* Import Button with loader state triggers */}
-                    {alreadyImported ? (
+                    {alreadyImported && importedLicitacao ? (
                       <button
-                        disabled
-                        className="px-4 py-2.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 cursor-not-allowed"
+                        onClick={() => {
+                          onOpenLicitacao(importedLicitacao.id);
+                          if (setActiveMainView) {
+                            setActiveMainView("editais");
+                          }
+                        }}
+                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-sm flex items-center gap-2 cursor-pointer transition"
                       >
-                        <Check className="w-4 h-4" /> Importado
+                        <Eye className="w-4 h-4" />
+                        Ver no Painel
                       </button>
                     ) : (
                       <button
@@ -957,11 +767,11 @@ export default function RastreadorPncp({
                         {isImportingThis ? (
                           <>
                             <RefreshCw className="w-4 h-4 animate-spin" />
-                            Baixando Tabelas...
+                            Baixando...
                           </>
                         ) : (
                           <>
-                            <Download className="w-4 h-4" /> Importar para o Painel
+                            <Download className="w-4 h-4" /> Importar
                           </>
                         )}
                       </button>
@@ -974,25 +784,23 @@ export default function RastreadorPncp({
         </div>
       )}
 
-      {/* Pagination controls */}
+      {/* Pagination */}
       {!isLoading && results.length > 0 && (
         <div className="flex items-center justify-between bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs text-xs font-sans">
           <button
             disabled={currentPage <= 1}
-            onClick={() => fetchPncpTenders(currentPage - 1)}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer flex items-center gap-1 font-bold text-slate-700"
+            onClick={() => handlePageChange(currentPage - 1)}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 border border-slate-200 rounded-xl transition cursor-pointer flex items-center gap-1 font-bold text-slate-700"
           >
             <ChevronLeft className="w-4 h-4" /> Anterior
           </button>
-
           <span className="text-slate-500 font-medium">
             Página <strong className="text-slate-900">{currentPage}</strong> de <strong className="text-slate-900">{totalPages}</strong>
           </span>
-
           <button
             disabled={currentPage >= totalPages}
-            onClick={() => fetchPncpTenders(currentPage + 1)}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer flex items-center gap-1 font-bold text-slate-700"
+            onClick={() => handlePageChange(currentPage + 1)}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 border border-slate-200 rounded-xl transition cursor-pointer flex items-center gap-1 font-bold text-slate-700"
           >
             Próxima <ChevronRight className="w-4 h-4" />
           </button>

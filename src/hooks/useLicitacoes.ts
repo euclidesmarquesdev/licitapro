@@ -3,11 +3,13 @@ import { Licitacao, CompanySetting, SmartNotification } from "../types";
 import { MOCK_LICITACOES, MOCK_COMPANY_DETAILS } from "../data";
 import { auth, db } from "../firebase";
 import { 
-  collection, doc, setDoc, deleteDoc, onSnapshot, query, where 
+  collection, doc, setDoc, deleteDoc, onSnapshot, query, where,
+  writeBatch
 } from "firebase/firestore";
 import { 
   getLocalLicitacoes, saveLocalLicitacao, deleteLocalLicitacao, 
-  getLocalCompanySettings, saveLocalCompanySettings, bulkSaveLocalLicitacoes 
+  getLocalCompanySettings, saveLocalCompanySettings, bulkSaveLocalLicitacoes,
+  clearLocalLicitacoes
 } from "../utils/indexedDb";
 
 enum OperationType {
@@ -62,12 +64,66 @@ export interface ToastState {
   type: "success" | "error" | "info";
 }
 
+// ============================================================
+// ✅ NOVA FUNÇÃO: Migração de dados do IndexedDB para o Firestore
+// ============================================================
+async function migrateLocalDataToFirestore(userId: string): Promise<{ migrated: number; message: string }> {
+  try {
+    // Busca TODOS os dados locais (independente do userId)
+    const localItems = await getLocalLicitacoes("guest-user");
+    
+    if (localItems.length === 0) {
+      return { migrated: 0, message: "Nenhum dado local para migrar." };
+    }
+
+    console.log(`[Migração] Encontrados ${localItems.length} itens locais para migrar.`);
+
+    // Migra para o Firestore em lote (atômico)
+    const batch = writeBatch(db);
+    let migratedCount = 0;
+
+    for (const item of localItems) {
+      // Garante que o item tenha o userId correto
+      const itemWithUserId = {
+        ...item,
+        userId: userId,
+        migratedFromLocal: true,
+        migratedAt: new Date().toISOString(),
+        originalId: item.id // Mantém referência ao ID original
+      };
+      
+      const docRef = doc(db, "licitacoes", item.id);
+      batch.set(docRef, itemWithUserId);
+      migratedCount++;
+    }
+
+    await batch.commit();
+    console.log(`[Migração] ${migratedCount} itens migrados com sucesso para o Firestore.`);
+
+    // ✅ Limpa o IndexedDB APÓS migração bem-sucedida
+    await clearLocalLicitacoes();
+    localStorage.removeItem("LICI_TRACK_V1_guest_data");
+    
+    return { 
+      migrated: migratedCount, 
+      message: `${migratedCount} licitação(ões) migrada(s) do modo convidado para sua conta.` 
+    };
+  } catch (error) {
+    console.error("[Migração] Erro ao migrar dados:", error);
+    return { 
+      migrated: 0, 
+      message: "Erro ao migrar dados. Seus dados locais permanecem salvos. Tente novamente." 
+    };
+  }
+}
+
 export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMode: boolean) {
   const [licitacoes, setLicitacoes] = useState<Licitacao[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [selectedLicitacaoId, setSelectedLicitacaoId] = useState<string | null>(null);
   const [companySettings, setCompanySettings] = useState<CompanySetting>(MOCK_COMPANY_DETAILS);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   // Trigger temporary toasts
   const showToast = (message: string, type: ToastState["type"] = "info") => {
@@ -99,10 +155,13 @@ export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMod
     loadSettings();
   }, []);
 
-  // Sync data with storage or Firestore
+  // ============================================================
+  // ✅ CORRIGIDO: Sincronização com migração automática
+  // ============================================================
   useEffect(() => {
     if (authLoading) return;
 
+    // --- MODO CONVIDADO ---
     if (isGuestMode || (user && user.isVirtual)) {
       setLoadingList(true);
       const userId = user ? user.uid : "guest-user";
@@ -113,7 +172,7 @@ export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMod
           if (items && items.length > 0) {
             setLicitacoes(items);
           } else {
-            // Retrocompatibility check
+            // Retrocompatibilidade com localStorage antigo
             const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
             const saved = localStorage.getItem(storageKey);
             if (saved) {
@@ -144,14 +203,51 @@ export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMod
       return;
     }
 
+    // --- MODO AUTENTICADO ---
     if (!user) {
       setLicitacoes([]);
       return;
     }
 
     setLoadingList(true);
-    
-    // Real-time Firestore sync query for current user
+
+    // ✅ VERIFICA E MIGRA DADOS LOCAIS (se houver)
+    async function checkAndMigrate() {
+      try {
+        const localItems = await getLocalLicitacoes("guest-user");
+        if (localItems.length > 0) {
+          setIsMigrating(true);
+          showToast("🔃 Detectamos dados do modo convidado. Migrando para sua conta...", "info");
+          
+          const result = await migrateLocalDataToFirestore(user.uid);
+          
+          // Se migrou com sucesso, recarrega os dados do Firestore
+          if (result.migrated > 0) {
+            showToast(result.message, "success");
+            // Força recarga da lista
+            setLicitacoes([]); // Limpa para forçar reload
+          } else {
+            showToast(result.message, "info");
+          }
+          
+          setIsMigrating(false);
+        }
+      } catch (error) {
+        console.error("[Migração] Erro ao verificar dados locais:", error);
+        setIsMigrating(false);
+        showToast("Erro ao verificar dados locais para migração.", "error");
+      }
+    }
+
+    // Executa migração apenas se:
+    // 1. Estiver autenticado (não convidado)
+    // 2. Não estiver em modo convidado
+    // 3. Não estiver em modo virtual
+    if (user && !isGuestMode && !user.isVirtual) {
+      checkAndMigrate();
+    }
+
+    // --- FIRESTORE REAL-TIME SYNC ---
     const q = query(
       collection(db, "licitacoes"),
       where("userId", "==", user.uid)
@@ -163,18 +259,14 @@ export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMod
         items.push({ id: doc.id, ...doc.data() } as Licitacao);
       });
       
-      // Merge with newly added local items that haven't synced to Firestore yet
-      setLicitacoes(prev => {
-        const unsynced = prev.filter(p => p.id.startsWith("pncp-") && !items.some(it => it.id === p.id));
-        return [...unsynced, ...items];
-      });
+      setLicitacoes(items);
       setLoadingList(false);
     }, (error) => {
       try {
         handleFirestoreError(error, OperationType.GET, "licitacoes");
       } catch (thrown) {
         showToast(
-          "Não conseguimos obter permissões totais de sincronização na nuvem para buscar as licitações. Contate o administrador do banco de dados.",
+          "Não conseguimos obter permissões de sincronização na nuvem. Verifique sua conexão.",
           "error"
         );
       }
@@ -184,29 +276,24 @@ export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMod
     return () => unsubscribe();
   }, [user, authLoading, isGuestMode]);
 
-  // Handler for updates (both local and Firestore)
+  // ============================================================
+  // ✅ CORRIGIDO: Atualiza licitação (com fallback local)
+  // ============================================================
   const handleUpdateLicitacao = async (updated: Licitacao) => {
-    // 1. Update state first for instant UX feel
+    // Atualiza estado local imediatamente
     setLicitacoes(prev => {
       const newList = prev.map(item => item.id === updated.id ? updated : item);
+      
+      // Se for modo convidado, salva no IndexedDB
       if (isGuestMode || (user && user.isVirtual)) {
-        const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
-        localStorage.setItem(storageKey, JSON.stringify(newList));
-        
-        // Save to IndexedDB
         saveLocalLicitacao(updated);
       }
+      
       return newList;
     });
 
-    if (isGuestMode || (user && user.isVirtual)) {
-      return;
-    }
-
-    if (!user) return;
-
-    // 2. Persist to Firestore
-    try {
+    // Se for autenticado, salva no Firestore
+    if (user && !isGuestMode && !user.isVirtual) {
       try {
         const docRef = doc(db, "licitacoes", updated.id);
         await setDoc(docRef, {
@@ -214,72 +301,72 @@ export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMod
           updatedAt: new Date().toISOString()
         }, { merge: true });
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `licitacoes/${updated.id}`);
+        console.error("[Firestore] Erro ao atualizar:", err);
+        showToast("Erro ao salvar na nuvem. As alterações estão salvas localmente.", "error");
+        // Salva localmente como fallback
+        await saveLocalLicitacao(updated);
       }
-    } catch (thrownError) {
-      showToast(
-        "Erro de Regras/Security no Firestore ao atualizar o edital. As alterações continuam salvas no seu navegador local.",
-        "error"
-      );
     }
   };
 
-  // Create/Add a newly registered bidding
+  // ============================================================
+  // ✅ CORRIGIDO: Cria nova licitação
+  // ============================================================
   const handleSaveNewLicitacao = async (newItem: Licitacao) => {
     const updatedList = [newItem, ...licitacoes];
     setLicitacoes(updatedList);
 
     if (isGuestMode || (user && user.isVirtual)) {
+      // Modo convidado: salva no IndexedDB
+      await saveLocalLicitacao(newItem);
+      // Também mantém no localStorage para retrocompatibilidade
       const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
       localStorage.setItem(storageKey, JSON.stringify(updatedList));
-      
-      // Save item to IndexedDB
-      saveLocalLicitacao(newItem);
     } else if (user) {
       try {
-        try {
-          await setDoc(doc(db, "licitacoes", newItem.id), newItem);
-        } catch (err) {
-          handleFirestoreError(err, OperationType.CREATE, `licitacoes/${newItem.id}`);
-        }
-      } catch (thrownError) {
-        showToast(
-          "Falha de permissão no Firestore para salvar esta nova licitação na nuvem. Ela ficará apenas na sessão temporária.",
-          "error"
-        );
+        // Modo autenticado: salva no Firestore
+        await setDoc(doc(db, "licitacoes", newItem.id), newItem);
+      } catch (err) {
+        console.error("[Firestore] Erro ao criar:", err);
+        showToast("Erro ao salvar na nuvem. A licitação foi salva localmente.", "error");
+        // Salva localmente como fallback
+        await saveLocalLicitacao(newItem);
       }
     }
   };
 
+  // ============================================================
+  // ✅ CORRIGIDO: Exclui licitação
+  // ============================================================
   const handleDeleteLicitacao = async (id: string) => {
     const updatedList = licitacoes.filter(item => item.id !== id);
     setLicitacoes(updatedList);
 
     if (isGuestMode || (user && user.isVirtual)) {
+      // Modo convidado: remove do IndexedDB
+      await deleteLocalLicitacao(id);
+      // Remove do localStorage
       const storageKey = user ? `LICI_TRACK_V1_data_${user.uid}` : "LICI_TRACK_V1_guest_data";
       localStorage.setItem(storageKey, JSON.stringify(updatedList));
-      
-      // Delete item from IndexedDB
-      await deleteLocalLicitacao(id);
       if (selectedLicitacaoId === id) setSelectedLicitacaoId(null);
-    } else {
+    } else if (user) {
       try {
-        try {
-          await deleteDoc(doc(db, "licitacoes", id));
-          if (selectedLicitacaoId === id) setSelectedLicitacaoId(null);
-        } catch (err) {
-          handleFirestoreError(err, OperationType.DELETE, `licitacoes/${id}`);
-        }
-      } catch (thrownError) {
-        showToast(
-          "Seu perfil não possui permissão para apagar esse registro no Firestore. A exclusão afetará somente a tela do usuário atual.",
-          "error"
-        );
+        // Modo autenticado: remove do Firestore
+        await deleteDoc(doc(db, "licitacoes", id));
+        if (selectedLicitacaoId === id) setSelectedLicitacaoId(null);
+      } catch (err) {
+        console.error("[Firestore] Erro ao excluir:", err);
+        showToast("Erro ao excluir da nuvem. A exclusão foi feita localmente.", "error");
+        // Remove localmente como fallback
+        await deleteLocalLicitacao(id);
+        if (selectedLicitacaoId === id) setSelectedLicitacaoId(null);
       }
     }
   };
 
-  // Trigger simulated alerts instant Delivery
+  // ============================================================
+  // ✅ FUNÇÕES DE ALERTAS (mantidas iguais)
+  // ============================================================
   const handleTriggerAlertNow = (licId: string, alertId: string) => {
     const lic = licitacoes.find(l => l.id === licId);
     if (!lic) return;
@@ -321,6 +408,9 @@ export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMod
     });
   };
 
+  // ============================================================
+  // ✅ FUNÇÕES DE CONFIGURAÇÃO (mantidas iguais)
+  // ============================================================
   const handleUpdateCompanySettings = async (settings: CompanySetting) => {
     setCompanySettings(settings);
     localStorage.setItem("LICI_TRACK_V1_company_settings", JSON.stringify(settings));
@@ -345,22 +435,61 @@ export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMod
     }
   };
 
+  // ============================================================
+  // ✅ NOVA FUNÇÃO: Forçar migração manual
+  // ============================================================
+  const forceMigrateLocalData = async (): Promise<{ migrated: number; message: string }> => {
+    if (!user || isGuestMode || user.isVirtual) {
+      return { migrated: 0, message: "Usuário não autenticado. Faça login para migrar dados." };
+    }
+    
+    setIsMigrating(true);
+    try {
+      const result = await migrateLocalDataToFirestore(user.uid);
+      if (result.migrated > 0) {
+        // Recarrega os dados
+        setLicitacoes([]);
+        showToast(result.message, "success");
+      } else {
+        showToast(result.message, "info");
+      }
+      return result;
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
   return {
+    // Dados
     licitacoes,
     setLicitacoes,
     loadingList,
     selectedLicitacaoId,
     setSelectedLicitacaoId,
     companySettings,
+    
+    // Toast
     toast,
     showToast,
+    
+    // Status de migração
+    isMigrating,
+    
+    // Handlers principais
     handleUpdateLicitacao,
     handleSaveNewLicitacao,
     handleDeleteLicitacao,
+    
+    // Alertas
     handleTriggerAlertNow,
     handleDeleteAlert,
     handleAddAlert,
+    
+    // Configurações
     handleUpdateCompanySettings,
-    handleRestoreComplete
+    handleRestoreComplete,
+    
+    // ✅ NOVO: Migração manual
+    forceMigrateLocalData,
   };
 }
