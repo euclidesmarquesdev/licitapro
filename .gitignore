@@ -8,4 +8,4 @@ coverage/
 !.env.example
 firebase-applet-config.json
 allcode.bat
-estrutura_src.bat
+estrutura_src.txt

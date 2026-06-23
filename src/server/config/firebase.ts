@@ -89,3 +89,8 @@ export async function verifyIdToken(idToken: string): Promise<{ uid: string; ema
     return null;
   }
 }
+
+// ✅ EXPORTA A FUNÇÃO PARA SER USADA NOS TESTES
+export function isFirebaseAdminReady(): boolean {
+  return isFirebaseAdminInitialized;
+}

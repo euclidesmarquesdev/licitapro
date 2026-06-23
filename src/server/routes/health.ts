@@ -51,8 +51,11 @@ router.get("/live", (req, res) => {
 // ============================================================
 router.get("/ready", async (req, res) => {
   try {
+    // Verifica dependências críticas
     const firebaseReady = isFirebaseAdminReady();
+    const redisReady = isRedisConnected;
     
+    // Se Firebase não estiver pronto, não está ready
     if (!firebaseReady) {
       return res.status(503).json({
         status: "not_ready",
@@ -113,6 +116,7 @@ router.get("/tests", async (req, res) => {
 // ============================================================
 router.get("/diagnostic", async (req, res) => {
   try {
+    // Coleta informações detalhadas
     const diagnostic = {
       timestamp: new Date().toISOString(),
       environment: {
