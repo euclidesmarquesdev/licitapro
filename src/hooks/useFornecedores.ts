@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Licitacao, SupplierContact } from "../types";
 import { MOCK_CATALOG_SUPPLIERS } from "../data";
+import { showToast } from "../utils/toast";
 
 export function useFornecedores(
   licitacao: Licitacao,
@@ -181,7 +182,10 @@ export function useFornecedores(
     });
 
     if (count === 0) {
-      alert("Todos os fornecedores compatíveis já estão presentes na lista.");
+      showToast.info(
+        "Fornecedores já cadastrados",
+        "Todos os fornecedores compatíveis já estão na lista."
+      );
       return;
     }
 
@@ -191,6 +195,11 @@ export function useFornecedores(
       suppliers: currentSuppliers,
       updatedAt: new Date().toISOString()
     });
+    
+    showToast.success(
+      "Fornecedores importados!",
+      `${count} fornecedores adicionados à lista.`
+    );
   };
 
   const handleUpdateSupplierItemPrice = (supplierId: string, itemNumero: string, price: number) => {

@@ -1,56 +1,65 @@
 import express from "express";
-import path from "path";
 import cors from "cors";
-import dotenv from "dotenv";
-import { createServer as createViteServer } from "vite";
-import apiRouter from "./src/server/routes/api";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import { createServer } from "vite";
+import apiRoutes from "./src/server/routes/api.js";  // ✅ TEM QUE SER ASSIM
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = parseInt(process.env.PORT || "3000", 10);
+const isProduction = process.env.NODE_ENV === "production";
 
-  // Configure CORS middleware for trusted domains (dynamic allowed origin check)
-  app.use(cors({
-    origin: true,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
-  }));
+// CORS
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 
-  // JSON request limit protections
-  app.use(express.json({ limit: "20mb" }));
+// Body parser
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
-  // Security headers configuration (clickjacking and cross-site scripting guards)
-  app.use((req, res, next) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "SAMEORIGIN");
-    res.setHeader("X-XSS-Protection", "1; mode=block");
-    next();
+// ============================================================
+// ✅ ROTAS DA API - PRIMEIRAS (NUNCA SERÃO INTERCEPTADAS)
+// ============================================================
+app.use("/api", apiRoutes);
+console.log("[LicitaPro] Rotas da API registradas em /api");
+
+// ============================================================
+// HEALTH CHECK
+// ============================================================
+app.get("/health", (req, res) => {
+  res.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
   });
+});
 
-  // Mount clean, modular API routes under /api
-  app.use("/api", apiRouter);
-
-  // Serve static UI assets or integrate Vite middleware in development mode
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
+// ============================================================
+// VITE EM DESENVOLVIMENTO
+// ============================================================
+if (!isProduction) {
+  try {
+    const vite = await createServer({
+      server: {
+        middlewareMode: true,
+        hmr: { port: 24678 }
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    console.log("[LicitaPro] Vite integrado em modo desenvolvimento");
+  } catch (error) {
+    console.warn("[LicitaPro] Vite não disponível:", error);
   }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[LicitaPro Server] Servidor de produção rodando no host 0.0.0.0:${PORT}`);
-  });
 }
 
-startServer();
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[LicitaPro] Servidor rodando em http://localhost:${PORT}`);
+  console.log(`[LicitaPro] API disponível em http://localhost:${PORT}/api`);
+});

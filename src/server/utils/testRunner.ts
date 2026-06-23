@@ -42,11 +42,12 @@ export async function testFirebaseConnection(): Promise<TestResult> {
       message: "Falha ao verificar token",
       duration: Date.now() - start
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     return {
       name: "Firebase Connection",
       status: "FAIL",
-      message: error.message,
+      message: err.message || "Erro desconhecido",
       duration: Date.now() - start
     };
   }
@@ -65,7 +66,6 @@ export async function testRedisConnection(): Promise<TestResult> {
       };
     }
     
-    // Tenta escrever e ler
     await setCachedData("test-key", { test: true }, 1000);
     const data = await getCachedData("test-key");
     
@@ -84,11 +84,12 @@ export async function testRedisConnection(): Promise<TestResult> {
       message: "Falha ao escrever/ler do Redis",
       duration: Date.now() - start
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     return {
       name: "Redis Connection",
       status: "FAIL",
-      message: error.message,
+      message: err.message || "Erro desconhecido",
       duration: Date.now() - start
     };
   }
@@ -128,11 +129,12 @@ export async function testGeminiConnection(): Promise<TestResult> {
       message: "Resposta inesperada da API",
       duration: Date.now() - start
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     return {
       name: "Gemini Connection",
       status: "FAIL",
-      message: error.message,
+      message: err.message || "Erro desconhecido",
       duration: Date.now() - start
     };
   }
@@ -170,11 +172,12 @@ export async function testPncpApi(): Promise<TestResult> {
       message: `Status ${response.status}`,
       duration: Date.now() - start
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     return {
       name: "PNCP API",
       status: "FAIL",
-      message: error.message,
+      message: err.message || "Erro desconhecido",
       duration: Date.now() - start
     };
   }
@@ -203,11 +206,12 @@ export async function testFirestoreConnection(): Promise<TestResult> {
       message: "Firestore operacional",
       duration: Date.now() - start
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as Error;
     return {
       name: "Firestore Connection",
       status: "FAIL",
-      message: error.message,
+      message: err.message || "Erro desconhecido",
       duration: Date.now() - start
     };
   }
@@ -232,21 +236,20 @@ export async function runTests(): Promise<TestResult[]> {
     try {
       const result = await test();
       results.push(result);
-      // Log do resultado
       const icon = result.status === "PASS" ? "✅" :
                    result.status === "WARN" ? "⚠️" : "❌";
       logger.info(`${icon} ${result.name} - ${result.status} (${result.duration}ms)`);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       results.push({
         name: test.name || "Unknown Test",
         status: "FAIL",
-        message: error.message,
+        message: err.message || "Erro desconhecido",
         duration: 0
       });
     }
   }
   
-  // Log do resumo
   const passCount = results.filter(r => r.status === "PASS").length;
   const warnCount = results.filter(r => r.status === "WARN").length;
   const failCount = results.filter(r => r.status === "FAIL").length;

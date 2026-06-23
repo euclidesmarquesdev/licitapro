@@ -2,24 +2,24 @@ import express from "express";
 import { fetchWithRedirects } from "./utils.js";
 
 const PAGE_SIZE = 50;
-const MAX_PAGES = 3; // ✅ APENAS 3 PÁGINAS PARA NÃO SOBRECARREGAR
+const MAX_PAGES = 2;
 
-/**
- * Busca contratações na API do PNCP
- * Endpoint: /publicacao
- */
 export async function handlePncpSearch(req: express.Request, res: express.Response) {
-  const termo = req.query.termo ? String(req.query.termo) : undefined;
-  const uf = req.query.uf ? String(req.query.uf) : undefined;
-  const codigoModalidade = req.query.codigoModalidade ? String(req.query.codigoModalidade) : undefined;
-  const pagina = req.query.pagina ? parseInt(String(req.query.pagina)) : 1;
-  const valorMinimo = req.query.valorMinimo ? parseFloat(String(req.query.valorMinimo)) : undefined;
-  const valorMaximo = req.query.valorMaximo ? parseFloat(String(req.query.valorMaximo)) : undefined;
-
-  const page = pagina || 1;
-  const searchTerm = termo ? termo.trim() : "";
-
   try {
+    console.log("[PNCP Search] ✅ Buscando editais...");
+    
+    const termo = req.query.termo ? String(req.query.termo) : undefined;
+    const uf = req.query.uf ? String(req.query.uf) : undefined;
+    const codigoModalidade = req.query.codigoModalidade ? String(req.query.codigoModalidade) : undefined;
+    const pagina = req.query.pagina ? parseInt(String(req.query.pagina)) : 1;
+    const dataInicial = req.query.dataInicial ? String(req.query.dataInicial) : undefined;
+    const dataFinal = req.query.dataFinal ? String(req.query.dataFinal) : undefined;
+    const valorMinimo = req.query.valorMinimo ? parseFloat(String(req.query.valorMinimo)) : undefined;
+    const valorMaximo = req.query.valorMaximo ? parseFloat(String(req.query.valorMaximo)) : undefined;
+
+    const page = pagina || 1;
+    const searchTerm = termo ? termo.trim() : "";
+
     const today = new Date();
     const formatDate = (date: Date) => {
       const y = date.getFullYear();
@@ -28,16 +28,14 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
       return `${y}${m}${d}`;
     };
 
+    const baseUrl = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao";
+    
     console.log(`[PNCP Search] 📅 Buscando editais dos últimos 30 dias`);
     console.log(`[PNCP Search] 📌 Modalidade: ${codigoModalidade || "TODAS"}`);
     console.log(`[PNCP Search] 📌 UF: ${uf || "TODOS"}`);
-    console.log(`[PNCP Search] 📌 Termo: ${searchTerm || "NENHUM"}`);
 
-    const baseUrl = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao";
-    
     let allItems: any[] = [];
 
-    // ✅ BUSCA APENAS 3 PÁGINAS (150 itens)
     for (let p = 1; p <= MAX_PAGES; p++) {
       try {
         const params = new URLSearchParams();
@@ -62,25 +60,18 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         }
 
         const apiUrl = `${baseUrl}?${params.toString()}`;
-        console.log(`[PNCP Search] 📄 Página ${p}/${MAX_PAGES}...`);
+        console.log(`[PNCP Search] 📄 Página ${p}...`);
         
-        const response = await fetch(apiUrl, {
-          headers: {
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-          },
-          signal: AbortSignal.timeout(15000) // ✅ TIMEOUT DE 15 SEGUNDOS
-        });
+        const response = await fetchWithRedirects(apiUrl, 5, 15000);
+        const responseText = await response.text();
 
-        if (!response.ok) {
-          console.warn(`[PNCP Search] Página ${p} falhou: HTTP ${response.status}`);
+        if (responseText.trim().startsWith('<!doctype') || responseText.trim().startsWith('<html')) {
+          console.warn(`[PNCP Search] Página ${p} retornou HTML, pulando.`);
           continue;
         }
 
-        const responseText = await response.text();
-        
-        if (responseText.trim().startsWith('<!doctype') || responseText.trim().startsWith('<html')) {
-          console.warn(`[PNCP Search] Página ${p} retornou HTML, pulando.`);
+        if (!response.ok) {
+          console.warn(`[PNCP Search] Página ${p} falhou: HTTP ${response.status}`);
           continue;
         }
 
@@ -95,35 +86,16 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
           break;
         }
         
-        // ✅ DELAY DE 300ms ENTRE REQUISIÇÕES
         await new Promise(resolve => setTimeout(resolve, 300));
         
       } catch (err: any) {
         console.warn(`[PNCP Search] Erro na página ${p}:`, err.message);
-        // ✅ SE ERRO, CONTINUA TENTANDO AS PRÓXIMAS
       }
     }
 
     // Remove duplicatas
     const uniqueItems = removeDuplicates(allItems);
     console.log(`[PNCP Search] ✅ Total único: ${uniqueItems.length} itens`);
-
-    // ✅ Se não tem itens, retorna vazio mas com sucesso
-    if (uniqueItems.length === 0) {
-      return res.json({
-        success: true,
-        data: {
-          data: [],
-          totalRegistros: 0,
-          totalPaginas: 1,
-          paginaAtual: page,
-          itensPorPagina: PAGE_SIZE,
-          editaisHoje: 0,
-          modalidadesEncontradas: [],
-          isMock: false
-        }
-      });
-    }
 
     // Filtro por valor
     let filteredByValue = uniqueItems;
@@ -132,7 +104,7 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
       console.log(`[PNCP Search] 💰 Após filtro por valor: ${filteredByValue.length} itens`);
     }
 
-    // Ordena por data (mais recentes primeiro)
+    // Ordena por data
     const sortedItems = sortByDate(filteredByValue);
 
     // Log dos 10 mais recentes
@@ -174,6 +146,7 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         modalidadesEncontradas.add(item.modalidadeNome);
       }
     });
+    console.log(`[PNCP Search] 📊 Modalidades: ${Array.from(modalidadesEncontradas).join(', ')}`);
 
     res.json({
       success: true,
@@ -190,7 +163,7 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     });
 
   } catch (error: any) {
-    console.error("[PNCP Search] Erro:", error);
+    console.error("[PNCP Search] ❌ Erro:", error);
     res.status(500).json({
       success: false,
       error: "Erro ao consultar API do PNCP: " + error.message
@@ -198,7 +171,7 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
   }
 }
 
-// ✅ FUNÇÕES AUXILIARES
+// FUNÇÕES AUXILIARES
 function removeDuplicates(items: any[]): any[] {
   const seen = new Set();
   return items.filter(item => {

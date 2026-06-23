@@ -4,6 +4,7 @@ import { STATUS_LICITACAO, MOCK_CATALOG_SUPPLIERS } from "../data";
 import ConfettiCelebration from "./ConfettiCelebration";
 import { parsePncpClipboardText, parseBrazilianDateToISO } from "../utils/pncpParser";
 import { auth } from "../firebase";
+import { showToast } from "../utils/toast";
 
 // Import custom hooks
 import { useLicitacao } from "../hooks/useLicitacao";
@@ -112,22 +113,12 @@ export default function LicitacaoDetails({
     handleUpdateSupplierItemPrice
   } = useFornecedores(licitacao, onUpdate, checkCelebration);
 
-
-
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL"
     }).format(val);
   };
-
-
-
-
-
-
-
-
 
   return (
     <div className="bg-slate-50 min-h-screen p-4 md:p-6 pb-24">

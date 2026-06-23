@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Licitacao } from "../types";
 import { ESTADOS_BRASIL } from "../data";
 import { getClientAuthToken } from "../firebase";
+import { showToast } from "../utils/toast";
 import { 
   Search, ShieldCheck, Download, ExternalLink, Calendar, 
   MapPin, RefreshCw, ChevronLeft, ChevronRight, Check,
@@ -112,7 +113,21 @@ export default function RastreadorPncp({
     { label: "Medicamentos", query: "medicamento" }
   ];
 
-  // ✅ REMOVIDO useEffect - A BUSCA INICIAL É CONTROLADA PELO APP
+  useEffect(() => {
+    if (!hasSearched) {
+      console.log("[RastreadorPncp] Busca inicial automática");
+      onSearch({
+        searchTerm: searchTerm,
+        uf: selectedUf,
+        modality: selectedModality,
+        dateRange: dateRange,
+        valorMinimo: valorMinimo,
+        valorMaximo: valorMaximo,
+        page: 1
+      });
+      setHasSearched(true);
+    }
+  }, []);
 
   const handleSearch = () => {
     onSearch({
@@ -167,11 +182,18 @@ export default function RastreadorPncp({
     });
   };
 
+  const handleCopyId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    showToast.success("ID copiado!", "ID da contratação copiado para a área de transferência.");
+  };
+
   const handleImportTender = async (pncpId: string) => {
     if (importingId) return;
     setImportingId(pncpId);
     setErrorMsg("");
     setImportSuccessMessage(null);
+
+    const toastId = showToast.loading("Baixando dados do PNCP...");
 
     try {
       const token = await getClientAuthToken();
@@ -297,6 +319,12 @@ export default function RastreadorPncp({
           setActiveMainView("editais");
         }
 
+        showToast.success(
+          "Edital importado com sucesso!",
+          `${d.edital} - ${d.orgao} (${rawItems.length} itens)`,
+          { id: toastId }
+        );
+
         setImportSuccessMessage(
           `🚀 Sucesso absoluto! O edital "${d.edital}" do órgão "${d.orgao}" foi importado com todos os seus ${rawItems.length} lotes/itens oficiais.`
         );
@@ -305,13 +333,17 @@ export default function RastreadorPncp({
       }
     } catch (err: any) {
       console.error("[PNCP Import Button Failed]:", err);
+      showToast.error(
+        "Falha na importação",
+        err.message || "Erro ao extrair dados do PNCP",
+        { id: toastId }
+      );
       setErrorMsg(`Falha na extração de dados do edital: ${err.message}`);
     } finally {
       setImportingId(null);
     }
   };
 
-  // Funções de formatação (mantidas iguais)
   const formatLocation = (item: any): string => {
     const uf = item.unidadeOrgao?.ufSigla || item.ufSigla || item.orgaoEntidade?.ufSigla || "BR";
     const mun = item.unidadeOrgao?.municipioNome || item.orgaoEntidade?.municipioNome || item.municipioNome || "";
@@ -432,7 +464,6 @@ export default function RastreadorPncp({
 
   return (
     <div className="space-y-6 font-sans">
-      {/* Header */}
       <div className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white relative overflow-hidden shadow-lg border border-slate-800">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
           <Building2 className="w-48 h-48 text-white" />
@@ -451,7 +482,6 @@ export default function RastreadorPncp({
         </div>
       </div>
 
-      {/* Filtros */}
       <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           <div className="lg:col-span-3">
@@ -590,7 +620,6 @@ export default function RastreadorPncp({
         </div>
       </div>
 
-      {/* Messages */}
       {importSuccessMessage && (
         <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-950 flex gap-3 shadow-xs">
           <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
@@ -608,7 +637,6 @@ export default function RastreadorPncp({
         </div>
       )}
 
-      {/* Status */}
       <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
         <div className="flex items-center gap-2">
           <Info className="w-4.5 h-4.5 text-blue-500" />
@@ -624,7 +652,6 @@ export default function RastreadorPncp({
         </a>
       </div>
 
-      {/* Results */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {[1, 2, 3, 4].map((it) => (
@@ -673,11 +700,8 @@ export default function RastreadorPncp({
                   <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 bg-slate-50 rounded-xl p-2 border border-slate-150">
                     <span className="truncate">ID: {item.numeroControlePNCP}</span>
                     <button 
-                      onClick={() => {
-                        navigator.clipboard.writeText(item.numeroControlePNCP || "");
-                        alert("ID copiado!");
-                      }} 
-                      className="text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
+                      onClick={() => handleCopyId(item.numeroControlePNCP)}
+                      className="text-blue-600 hover:text-blue-800 font-bold cursor-pointer hover:underline shrink-0 px-1 ml-1"
                     >
                       Copiar
                     </button>
@@ -769,7 +793,6 @@ export default function RastreadorPncp({
         </div>
       )}
 
-      {/* Pagination */}
       {!isLoading && results.length > 0 && (
         <div className="flex items-center justify-between bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs text-xs font-sans">
           <button

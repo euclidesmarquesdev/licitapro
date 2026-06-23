@@ -4,6 +4,7 @@ import { Licitacao } from "../types";
 import { CATEGORIAS_LICITACAO } from "../data";
 import { parsePncpClipboardText, parseBrazilianDateToISO } from "../utils/pncpParser";
 import { getClientAuthToken } from "../firebase";
+import { showToast } from "../utils/toast";
 
 interface AddLicitacaoModalProps {
   isOpen: boolean;
@@ -55,10 +56,12 @@ export default function AddLicitacaoModal({
 
   if (!isOpen) return null;
 
-  // Handle local parse of PNCP page content 
   const handleLocalPncpParse = () => {
     if (!pastedPNCP.trim()) {
-      alert("Por favor, cole o texto da licitação do PNCP no campo para podermos extrair os dados!");
+      showToast.warning(
+        "Texto vazio",
+        "Cole o texto da licitação do PNCP para extrair os dados."
+      );
       return;
     }
     
@@ -66,7 +69,6 @@ export default function AddLicitacaoModal({
     try {
       const data = parsePncpClipboardText(pastedPNCP);
       
-      // Load parsed values into state
       setNewEdital(data.edital || "Aviso de Contratação");
       setNewOrgao(data.orgao || "Órgão Não Informado");
       setNewUnidadeCompradora(data.unidadeCompradora || "");
@@ -83,7 +85,6 @@ export default function AddLicitacaoModal({
       setNewItensPncp(data.itens || []);
       setNewArquivosPncp(data.arquivos || []);
 
-      // Guess standard categories
       if (data.objeto) {
         const lowerObj = data.objeto.toLowerCase();
         if (lowerObj.includes("papelaria") || lowerObj.includes("suprimento") || lowerObj.includes("consumo") || lowerObj.includes("papel") || lowerObj.includes("tinta")) {
@@ -97,23 +98,35 @@ export default function AddLicitacaoModal({
         }
       }
 
+      showToast.success(
+        "Dados extraídos com sucesso!",
+        `Encontrados ${data.itens?.length || 0} itens e ${data.arquivos?.length || 0} arquivos`
+      );
+
       setAddModalTab("form");
     } catch (err) {
       console.error("Local parsing error:", err);
-      alert("Erro ao decodificar a estrutura local do PNCP. Tente colar novamente.");
+      showToast.error(
+        "Erro ao processar texto",
+        "Verifique se o texto copiado está completo e tente novamente."
+      );
     } finally {
       setParsingLoading(false);
     }
   };
 
-  // Handle AI Senior refinement of PNCP
   const handleGeminiPncpScrape = async () => {
     if (!pastedPNCP.trim()) {
-      alert("Cole o texto copiado da página do PNCP para refinar com inteligência artificial!");
+      showToast.warning(
+        "Texto vazio",
+        "Cole o texto copiado da página do PNCP para refinar com IA."
+      );
       return;
     }
     
     setParsingLoading(true);
+    const toastId = showToast.loading("Processando com IA (Gemini)...");
+    
     try {
       const token = await getClientAuthToken();
       const res = await fetch("/api/licitacoes/scrape", {
@@ -141,7 +154,6 @@ export default function AddLicitacaoModal({
             setNewArquivosPncp(d.arquivosPncp);
           }
           
-          // Preserving specific fields via local parser regex
           const localD = parsePncpClipboardText(pastedPNCP);
           if (localD.unidadeCompradora) setNewUnidadeCompradora(localD.unidadeCompradora);
           if (localD.amparoLegal) setNewAmparoLegal(localD.amparoLegal);
@@ -154,31 +166,43 @@ export default function AddLicitacaoModal({
             setNewArquivosPncp(localD.arquivos);
           }
           
+          showToast.success(
+            "IA concluiu a análise!",
+            `Dados extraídos com sucesso pela IA.`,
+            { id: toastId }
+          );
+          
           setAddModalTab("form");
         } else {
-          // fallback to local parser instantly
+          showToast.warning("IA não retornou dados", "Usando fallback local.", { id: toastId });
           handleLocalPncpParse();
         }
       } else {
+        showToast.warning("Erro na IA", "Usando fallback local.", { id: toastId });
         handleLocalPncpParse();
       }
     } catch (err) {
       console.error("Gemini scrape failure, trying local parser:", err);
+      showToast.warning("Erro na IA", "Usando fallback local.", { id: toastId });
       handleLocalPncpParse();
     } finally {
       setParsingLoading(false);
     }
   };
 
-  // Create new blank bidding record
   const handleCreateLicitacao = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEdital.trim() || !newOrgao.trim()) return;
+    if (!newEdital.trim() || !newOrgao.trim()) {
+      showToast.warning(
+        "Campos obrigatórios",
+        "Preencha o Edital e o Órgão para continuar."
+      );
+      return;
+    }
 
     const newId = "lic-" + Date.now();
     const uid = user ? user.uid : "guest-user";
 
-    // Support formatting Brazilian date (DD/MM/YYYY HH:mm) or using standard Date
     const parsedSessionDate = parseBrazilianDateToISO(newFimPropostas);
 
     const newItem: Licitacao = {
@@ -194,15 +218,18 @@ export default function AddLicitacaoModal({
       estado: newEstado || "",
       categoria: newCategory,
       status: "Triagem",
-      checklist: [], // Completely blank
-      suppliers: [], // Completely blank
+      checklist: [],
+      suppliers: [],
       competitors: [],
-      alerts: [], // Completely blank
+      alerts: [],
       historicStatus: [
-        { status: "Triagem", timestamp: new Date().toISOString(), notes: "Licitação oficial cadastrada no sistema sob monitoramento.", userId: uid }
+        { 
+          status: "Triagem", 
+          timestamp: new Date().toISOString(), 
+          notes: "Licitação oficial cadastrada no sistema sob monitoramento.", 
+          userId: uid 
+        }
       ],
-      
-      // PNCP specific fields
       idContratacaoPncp: newIdPncp,
       amparoLegal: newAmparoLegal,
       unidadeCompradora: newUnidadeCompradora,
@@ -212,12 +239,16 @@ export default function AddLicitacaoModal({
       pncpRawText: pastedPNCP,
       itensPncp: newItensPncp,
       arquivosPncp: newArquivosPncp,
-
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
     onSave(newItem);
+
+    showToast.success(
+      "Licitação cadastrada!",
+      `${newEdital} - ${newOrgao} (${newItensPncp.length} itens)`
+    );
 
     // Reset inputs
     setNewEdital("");
@@ -267,7 +298,6 @@ export default function AddLicitacaoModal({
           </button>
         </div>
 
-        {/* Modal Tabs Selection */}
         <div className="flex border-b border-slate-100 bg-slate-50/50">
           <button
             type="button"
@@ -368,7 +398,6 @@ export default function AddLicitacaoModal({
               ⚠️ <strong>Revisão dos campos:</strong> Verifique se os dados extraídos automaticamente estão corretos antes de salvar. Você também pode digitar qualquer campo individualmente.
             </div>
 
-            {/* Seção 1 */}
             <div className="bg-slate-50 p-4 rounded-xl space-y-3 border border-slate-150">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-sans">1. Órgão Licitante e Comprador</h4>
               
@@ -423,7 +452,6 @@ export default function AddLicitacaoModal({
               </div>
             </div>
 
-            {/* Seção 2 */}
             <div className="bg-slate-50 p-4 rounded-xl space-y-3 border border-slate-150">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-sans">2. Identificação e Amparo Legal (PNCP)</h4>
               
@@ -492,7 +520,6 @@ export default function AddLicitacaoModal({
               </div>
             </div>
 
-            {/* Seção 3 */}
             <div className="bg-slate-50 p-4 rounded-xl space-y-3 border border-slate-150 font-sans">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-sans">3. Descrição do Objeto & Valores</h4>
               
@@ -534,7 +561,6 @@ export default function AddLicitacaoModal({
               </div>
             </div>
 
-            {/* Seção 4 */}
             <div className="bg-slate-50 p-4 rounded-xl space-y-3 border border-slate-150">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-sans">4. Janela de Envio de Propostas</h4>
               
@@ -562,7 +588,6 @@ export default function AddLicitacaoModal({
               </div>
             </div>
 
-            {/* Seção 5: Itens/Lotes extraídos */}
             {newItensPncp.length > 0 && (
               <div className="bg-blue-50/20 border border-blue-105 p-4 rounded-xl space-y-2">
                 <h4 className="text-[10px] font-black text-blue-700 uppercase tracking-widest flex items-center justify-between font-sans">

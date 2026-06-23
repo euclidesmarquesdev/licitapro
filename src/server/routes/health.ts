@@ -1,6 +1,6 @@
 import express from "express";
 import { logger } from "../utils/logger.js";
-import { runTests, TestResult } from "../utils/testRunner.js";
+import { runTests } from "../utils/testRunner.js";
 import { isRedisConnected, getCacheSize } from "../config/redis.js";
 import { isFirebaseAdminReady } from "../config/firebase.js";
 import { isGeminiConfigured } from "../services/gemini.js";
@@ -51,11 +51,8 @@ router.get("/live", (req, res) => {
 // ============================================================
 router.get("/ready", async (req, res) => {
   try {
-    // Verifica dependências críticas
     const firebaseReady = isFirebaseAdminReady();
-    const redisReady = isRedisConnected;
     
-    // Se Firebase não estiver pronto, não está ready
     if (!firebaseReady) {
       return res.status(503).json({
         status: "not_ready",
@@ -71,7 +68,7 @@ router.get("/ready", async (req, res) => {
   } catch (error: any) {
     res.status(503).json({
       status: "not_ready",
-      reason: error.message,
+      reason: error.message || "Erro desconhecido",
       timestamp: new Date().toISOString()
     });
   }
@@ -102,10 +99,10 @@ router.get("/tests", async (req, res) => {
       results
     });
   } catch (error: any) {
-    logger.error("Erro ao executar testes", { error: error.message });
+    logger.error("Erro ao executar testes", { error: error.message || "Erro desconhecido" });
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: error.message || "Erro ao executar testes",
       timestamp: new Date().toISOString()
     });
   }
@@ -116,7 +113,6 @@ router.get("/tests", async (req, res) => {
 // ============================================================
 router.get("/diagnostic", async (req, res) => {
   try {
-    // Coleta informações detalhadas
     const diagnostic = {
       timestamp: new Date().toISOString(),
       environment: {
@@ -165,9 +161,9 @@ router.get("/diagnostic", async (req, res) => {
     
     res.json(diagnostic);
   } catch (error: any) {
-    logger.error("Erro no diagnóstico", { error: error.message });
+    logger.error("Erro no diagnóstico", { error: error.message || "Erro desconhecido" });
     res.status(500).json({
-      error: error.message,
+      error: error.message || "Erro ao gerar diagnóstico",
       timestamp: new Date().toISOString()
     });
   }

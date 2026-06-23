@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { MOCK_CATALOG_SUPPLIERS } from "../data";
 import { Licitacao } from "../types";
+import { showToast } from "../utils/toast";
 import { 
   Users, Search, PlusCircle, Mail, Phone, Tag, Building, 
   Sparkles, Globe, Filter, Copy, Check, CheckSquare, 
@@ -56,7 +57,10 @@ export default function GeneralSuppliers({ licitacoes, onOpenLicitacao }: Genera
   const handleCreateSupplier = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim() || !newProduct.trim()) {
-      alert("Por favor, preencha o nome e o produto do fornecedor.");
+      showToast.warning(
+        "Campos obrigatórios",
+        "Preencha o nome e o produto do fornecedor."
+      );
       return;
     }
 
@@ -88,7 +92,11 @@ export default function GeneralSuppliers({ licitacoes, onOpenLicitacao }: Genera
     setNewKeywords("");
     setNewCategory("Geral");
     setIsAddOpen(false);
-    alert(`Fornecedor "${newSup.name}" cadastrado com sucesso no banco de dados!`);
+    
+    showToast.success(
+      "Fornecedor cadastrado!",
+      `${newSup.name} adicionado ao banco de dados.`
+    );
   };
 
   // Identify category of supplier for filtering purpose

@@ -73,8 +73,7 @@ export default function App() {
   };
 
   // Main dashboard view control
-  const [activeMainView, setActiveMainView] = useState<"editais" | "fornecedores" | "rastreador">("editais");
-
+  const [activeMainView, setActiveMainView] = useState<"editais" | "fornecedores" | "rastreador">("rastreador");
   // PNCP Search
   const {
     results: pncpResults,
