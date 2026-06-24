@@ -1,8 +1,11 @@
 import express from "express";
-import { fetchWithRedirects } from "./utils.js";
 
 const PAGE_SIZE = 50;
-const MAX_PAGES = 2;
+const MAX_PAGES = 2; // 🔥 REDUZIDO para 2 páginas (evita rate limit)
+const CACHE_TTL = 60000; // 🔥 1 minuto de cache
+
+// 🔥 Cache em memória
+const cache = new Map<string, { data: any; timestamp: number }>();
 
 export async function handlePncpSearch(req: express.Request, res: express.Response) {
   try {
@@ -20,6 +23,16 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     const page = pagina || 1;
     const searchTerm = termo ? termo.trim() : "";
 
+    // 🔥 Criar chave de cache baseada nos parâmetros
+    const cacheKey = JSON.stringify({ termo, uf, codigoModalidade, dataInicial, dataFinal, valorMinimo, valorMaximo });
+    
+    // 🔥 Verificar cache
+    const cached = cache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+      console.log("[PNCP Search] ✅ Usando cache");
+      return res.json(cached.data);
+    }
+
     const today = new Date();
     const formatDate = (date: Date) => {
       const y = date.getFullYear();
@@ -28,10 +41,25 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
       return `${y}${m}${d}`;
     };
 
-    const baseUrl = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao";
+    const baseUrl = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta";
     
-    console.log(`[PNCP Search] 📅 Buscando editais dos últimos 30 dias`);
-    console.log(`[PNCP Search] 📌 Modalidade: ${codigoModalidade || "TODAS"}`);
+    const dataFinalStr = dataFinal ? dataFinal.replace(/-/g, '') : formatDate(today);
+    
+    let dataInicialStr = dataInicial ? dataInicial.replace(/-/g, '') : undefined;
+    if (!dataInicialStr) {
+      const pastDate = new Date();
+      pastDate.setDate(today.getDate() - 15); // 🔥 REDUZIDO para 15 dias
+      dataInicialStr = formatDate(pastDate);
+    }
+
+    let modalidadeParaEnviar = codigoModalidade;
+    if (!modalidadeParaEnviar || modalidadeParaEnviar === "Todos" || modalidadeParaEnviar === "" || modalidadeParaEnviar === "undefined") {
+      modalidadeParaEnviar = "6";
+    }
+
+    console.log(`[PNCP Search] 📅 Data Inicial: ${dataInicialStr}`);
+    console.log(`[PNCP Search] 📅 Data Final: ${dataFinalStr}`);
+    console.log(`[PNCP Search] 📌 Modalidade: ${modalidadeParaEnviar}`);
     console.log(`[PNCP Search] 📌 UF: ${uf || "TODOS"}`);
 
     let allItems: any[] = [];
@@ -39,21 +67,11 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     for (let p = 1; p <= MAX_PAGES; p++) {
       try {
         const params = new URLSearchParams();
-        params.append("dataFinal", formatDate(today));
-        const pastDate = new Date();
-        pastDate.setDate(today.getDate() - 30);
-        params.append("dataInicial", formatDate(pastDate));
+        params.append("dataFinal", dataFinalStr);
+        params.append("dataInicial", dataInicialStr);
         params.append("pagina", String(p));
         params.append("tamanhoPagina", String(PAGE_SIZE));
-
-        const isModalidadeValida = codigoModalidade && 
-                                   codigoModalidade !== "Todos" && 
-                                   codigoModalidade !== "" &&
-                                   codigoModalidade !== "undefined";
-        
-        if (isModalidadeValida) {
-          params.append("codigoModalidadeContratacao", String(codigoModalidade));
-        }
+        params.append("codigoModalidadeContratacao", String(modalidadeParaEnviar));
 
         if (uf && uf !== "Todos" && uf !== "" && uf !== "undefined") {
           params.append("uf", uf);
@@ -62,11 +80,22 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         const apiUrl = `${baseUrl}?${params.toString()}`;
         console.log(`[PNCP Search] 📄 Página ${p}...`);
         
-        const response = await fetchWithRedirects(apiUrl, 5, 15000);
+        // 🔥 HEADERS IDÊNTICOS AO NAVEGADOR
+        const response = await fetch(apiUrl, {
+          headers: {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Cache-Control": "no-cache",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            "Referer": "https://pncp.gov.br/app/editais",
+            "Origin": "https://pncp.gov.br"
+          }
+        });
+
         const responseText = await response.text();
 
         if (responseText.trim().startsWith('<!doctype') || responseText.trim().startsWith('<html')) {
-          console.warn(`[PNCP Search] Página ${p} retornou HTML, pulando.`);
+          console.warn(`[PNCP Search] Página ${p} retornou HTML. Pulando...`);
           continue;
         }
 
@@ -86,69 +115,78 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
           break;
         }
         
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // 🔥 DELAY MAIOR entre requisições
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
       } catch (err: any) {
         console.warn(`[PNCP Search] Erro na página ${p}:`, err.message);
+        // 🔥 Se errar, espera mais e tenta de novo
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
 
-    // Remove duplicatas
     const uniqueItems = removeDuplicates(allItems);
     console.log(`[PNCP Search] ✅ Total único: ${uniqueItems.length} itens`);
 
-    // Filtro por valor
-    let filteredByValue = uniqueItems;
+    // 🔥 FILTRO: Remover expirados
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const itemsValidos = uniqueItems.filter((item: any) => {
+      const dataEncerramento = item.dataEncerramentoProposta;
+      
+      if (!dataEncerramento) return true;
+      
+      const dataObj = parseDateString(dataEncerramento);
+      if (!dataObj) return true;
+      
+      dataObj.setHours(0, 0, 0, 0);
+      const isValid = dataObj >= hoje;
+      
+      return isValid;
+    });
+
+    const removidos = uniqueItems.length - itemsValidos.length;
+    console.log(`[PNCP Search] 📌 ${removidos} editais removidos. Restam ${itemsValidos.length} editais válidos.`);
+
+    let filteredByValue = itemsValidos;
     if (valorMinimo !== undefined || valorMaximo !== undefined) {
-      filteredByValue = filterByValue(uniqueItems, valorMinimo, valorMaximo);
+      filteredByValue = filterByValue(itemsValidos, valorMinimo, valorMaximo);
       console.log(`[PNCP Search] 💰 Após filtro por valor: ${filteredByValue.length} itens`);
     }
 
-    // Ordena por data
     const sortedItems = sortByDate(filteredByValue);
+    console.log(`[PNCP Search] 📅 ${sortedItems.length} itens ordenados por dataAtualizacao`);
 
-    // Log dos 10 mais recentes
     if (sortedItems.length > 0) {
       console.log(`[PNCP Search] 📅 10 mais recentes:`);
       sortedItems.slice(0, 10).forEach((item, i) => {
-        const data = item.dataAtualizacao || item.dataPublicacaoPncp || "data desconhecida";
+        const dataAtualizacao = item.dataAtualizacao || item.dataPublicacaoPncp || "data desconhecida";
+        const dataEncerramento = item.dataEncerramentoProposta || "sem data";
         const orgao = item.orgaoEntidade?.razaoSocial || "Órgão";
-        const modalidade = item.modalidadeNome || "Modalidade";
-        console.log(`  ${i+1}. ${data} - ${modalidade} - ${orgao}`);
+        console.log(`  ${i+1}. Atualização: ${dataAtualizacao} | Encerramento: ${dataEncerramento} | ${orgao}`);
       });
     }
 
-    // Verifica editais de hoje
-    const todayStr = formatDate(today);
-    const todayItems = sortedItems.filter(item => {
-      const data = item.dataAtualizacao || item.dataPublicacaoPncp || "";
-      return data.replace(/-/g, "").startsWith(todayStr);
-    });
-    console.log(`[PNCP Search] 📌 Editais de hoje (${todayStr}): ${todayItems.length}`);
-
-    // Filtro por termo
     let finalItems = sortedItems;
     if (searchTerm) {
       finalItems = filterByTerm(sortedItems, searchTerm);
       console.log(`[PNCP Search] Após filtro por termo: ${finalItems.length} itens`);
     }
 
-    // Pagina resultados
     const totalRegistros = finalItems.length;
     const totalPaginas = Math.max(1, Math.ceil(totalRegistros / PAGE_SIZE));
     const startIndex = (page - 1) * PAGE_SIZE;
     const paginatedItems = finalItems.slice(startIndex, startIndex + PAGE_SIZE);
 
-    // Conta modalidades
     const modalidadesEncontradas = new Set<string>();
     finalItems.forEach(item => {
       if (item.modalidadeNome) {
         modalidadesEncontradas.add(item.modalidadeNome);
       }
     });
-    console.log(`[PNCP Search] 📊 Modalidades: ${Array.from(modalidadesEncontradas).join(', ')}`);
 
-    res.json({
+    const responseData = {
       success: true,
       data: {
         data: paginatedItems,
@@ -156,11 +194,16 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         totalPaginas,
         paginaAtual: page,
         itensPorPagina: PAGE_SIZE,
-        editaisHoje: todayItems.length,
+        editaisHoje: 0,
         modalidadesEncontradas: Array.from(modalidadesEncontradas),
         isMock: false
       }
-    });
+    };
+
+    // 🔥 Salvar no cache
+    cache.set(cacheKey, { data: responseData, timestamp: Date.now() });
+
+    res.json(responseData);
 
   } catch (error: any) {
     console.error("[PNCP Search] ❌ Erro:", error);
@@ -171,7 +214,43 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
   }
 }
 
-// FUNÇÕES AUXILIARES
+// ============================================================
+// FUNÇÕES AUXILIARES (MANTIDAS)
+// ============================================================
+function parseDateString(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  
+  try {
+    let cleanDate = dateStr.replace(/h$/i, '').trim();
+    if (cleanDate.includes(',')) {
+      cleanDate = cleanDate.split(',')[0].trim();
+    }
+    if (cleanDate.includes(' ')) {
+      cleanDate = cleanDate.split(' ')[0].trim();
+    }
+    
+    const parts = cleanDate.split('/');
+    if (parts.length === 3) {
+      const dia = parseInt(parts[0]);
+      const mes = parseInt(parts[1]) - 1;
+      const ano = parseInt(parts[2]);
+      const data = new Date(ano, mes, dia);
+      if (!isNaN(data.getTime())) {
+        return data;
+      }
+    }
+    
+    const isoData = new Date(cleanDate);
+    if (!isNaN(isoData.getTime())) {
+      return isoData;
+    }
+    
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function removeDuplicates(items: any[]): any[] {
   const seen = new Set();
   return items.filter(item => {

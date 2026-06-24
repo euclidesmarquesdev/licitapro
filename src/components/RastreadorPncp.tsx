@@ -723,7 +723,7 @@ export default function RastreadorPncp({
                     </div>
                     <div>
                       <span className="block text-[8px] font-black uppercase text-slate-400">Sessão</span>
-                      <p className="font-black text-indigo-700">{formatPncpDateString(item.dataAberturaProposta)}</p>
+                      <p className="font-black text-indigo-700">{formatPncpDateString(item.dataEncerramentoProposta || item.dataAberturaProposta)}</p>
                     </div>
                     <div>
                       <span className="block text-[8px] font-black uppercase text-slate-400">Atualização</span>
