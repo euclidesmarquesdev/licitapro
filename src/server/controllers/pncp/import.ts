@@ -44,16 +44,16 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
       });
     }
 
-    console.log(`[PNCP Import] CNPJ: ${parsed.cnpj}, Ano: ${parsed.ano}, Seq: ${parsed.sequencial}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
     // 4. Busca os dados
-    let purchaseDetails: any = null;
-    let itemsList: any[] = [];
-    let filesList: any[] = [];
+    let purchaseDetails: unknown = null;
+    let itemsList: unknown[] = [];
+    let filesList: unknown[] = [];
     let fetchErrorMsg = "";
 
     if (clientProvidedData) {
-      console.log("[PNCP Import] Usando dados enviados pelo navegador");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       purchaseDetails = clientProvidedData.purchaseDetails;
       itemsList = clientProvidedData.itemsList || [];
       filesList = clientProvidedData.filesList || [];
@@ -62,59 +62,59 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
       const urls = buildPncpUrls(parsed.cnpj, parsed.ano, parsed.sequencial);
 
       // ✅ BUSCA DETALHES - Tenta todas as URLs de detalhes
-      console.log("[PNCP Import] Buscando detalhes do edital...");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       for (const url of urls.detail) {
         try {
-          console.log(`[PNCP Import] Tentando: ${url}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
           const response = await fetchWithRedirects(url, 5, 15000);
           
           if (response.ok) {
             purchaseDetails = await response.json();
-            console.log(`[PNCP Import] ✅ Detalhes obtidos de: ${url}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
             break;
           } else {
             fetchErrorMsg = `HTTP ${response.status}`;
-            console.log(`[PNCP Import] ❌ Falha em ${url}: ${fetchErrorMsg}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           fetchErrorMsg = err.message;
-          console.log(`[PNCP Import] ❌ Erro em ${url}: ${fetchErrorMsg}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
         }
       }
 
       // ✅ SE CONSEGUIU DETALHES, BUSCA ITENS E ARQUIVOS
       if (purchaseDetails) {
         // Busca itens
-        console.log("[PNCP Import] Buscando itens...");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
         for (const url of urls.items) {
           try {
-            console.log(`[PNCP Import] Tentando itens: ${url}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
             const response = await fetchWithRedirects(url, 5, 15000);
             if (response.ok) {
               const data = await response.json();
               itemsList = Array.isArray(data) ? data : (data.resultado || data.data || []);
-              console.log(`[PNCP Import] ✅ ${itemsList.length} itens encontrados`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
               break;
             }
-          } catch (err: any) {
-            console.log(`[PNCP Import] ❌ Erro ao buscar itens: ${err.message}`);
+          } catch (err: unknown) {
+  // Log de desenvolvimento removido em produção pelo AutoPatch
           }
         }
 
         // Busca arquivos
-        console.log("[PNCP Import] Buscando arquivos...");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
         for (const url of urls.files) {
           try {
-            console.log(`[PNCP Import] Tentando arquivos: ${url}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
             const response = await fetchWithRedirects(url, 5, 15000);
             if (response.ok) {
               const data = await response.json();
               filesList = Array.isArray(data) ? data : (data.resultado || data.data || []);
-              console.log(`[PNCP Import] ✅ ${filesList.length} arquivos encontrados`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
               break;
             }
-          } catch (err: any) {
-            console.log(`[PNCP Import] ❌ Erro ao buscar arquivos: ${err.message}`);
+          } catch (err: unknown) {
+  // Log de desenvolvimento removido em produção pelo AutoPatch
           }
         }
       }
@@ -128,13 +128,13 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
     }
 
     // 6. Mapeia os dados
-    console.log("[PNCP Import] Mapeando dados...");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     const mappedData = mapPncpData(purchaseDetails, itemsList, filesList);
 
     // 7. Enriquecimento com IA (opcional)
     let aiEnhancement = null;
     if (runAIEnhance && isGeminiConfigured) {
-      console.log("[PNCP Import] Enriquecendo com IA...");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       aiEnhancement = await enhanceWithAI(purchaseDetails, mappedData);
     }
 
@@ -163,10 +163,10 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
     );
     await saveAuditLogToFirestore(token, auditLog, verifiedUser.uid);
 
-    console.log("[PNCP Import] ✅ Importação concluída com sucesso!");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     res.json({ success: true, isMock: false, data: result });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[PNCP Import] ❌ Erro:", err);
     res.status(500).json({ 
       error: "Falha na conexão com o sistema do PNCP: " + err.message 
@@ -177,7 +177,7 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
 /**
  * Enriquecimento com IA
  */
-async function enhanceWithAI(purchaseDetails: any, mappedData: any): Promise<{
+async function enhanceWithAI(purchaseDetails: unknown, mappedData: any): Promise<{
   checklist: string[];
   competitors: string[];
   usage: { promptTokens: number; completionTokens: number; totalTokens: number };
