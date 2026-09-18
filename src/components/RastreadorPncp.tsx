@@ -14,7 +14,7 @@ interface RastreadorPncpProps {
   licitacoes: Licitacao[];
   onSaveNewLicitacao: (newItem: Licitacao) => Promise<void>;
   onOpenLicitacao: (id: string) => void;
-  user: any;
+  user: unknown;
   isGuestMode: boolean;
   searchTerm: string;
   setSearchTerm: (val: string) => void;
@@ -26,8 +26,8 @@ interface RastreadorPncpProps {
   setDateRange: (val: string) => void;
   currentPage: number;
   setCurrentPage: (val: number) => void;
-  results: any[];
-  setResults: (val: any[]) => void;
+  results: unknown[];
+  setResults: (val: unknown[]) => void;
   totalRecords: number;
   setTotalRecords: (val: number) => void;
   totalPages: number;
@@ -209,7 +209,7 @@ export default function RastreadorPncp({
         })
       });
 
-      let body: any;
+      let body: unknown;
       const importText = await response.text();
       try {
         body = JSON.parse(importText);
@@ -244,7 +244,7 @@ export default function RastreadorPncp({
         }));
 
         const rawItems = d.itensPncp || [];
-        const finalSuppliers = rawItems.map((it: any, index: number) => ({
+        const finalSuppliers = rawItems.map((it: unknown, index: number) => ({
           id: `pncp-sup-tr-${index}-${Date.now()}`,
           name: `[PNCP] Item ${it.numero}`,
           product: it.descricao,
@@ -331,7 +331,7 @@ export default function RastreadorPncp({
 
         window.scrollTo({ top: 300, behavior: "smooth" });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[PNCP Import Button Failed]:", err);
       showToast.error(
         "Falha na importação",
@@ -344,7 +344,7 @@ export default function RastreadorPncp({
     }
   };
 
-  const formatLocation = (item: any): string => {
+  const formatLocation = (item: unknown): string => {
     const uf = item.unidadeOrgao?.ufSigla || item.ufSigla || item.orgaoEntidade?.ufSigla || "BR";
     const mun = item.unidadeOrgao?.municipioNome || item.orgaoEntidade?.municipioNome || item.municipioNome || "";
     
@@ -355,7 +355,7 @@ export default function RastreadorPncp({
     return `Estado: ${uf}`;
   };
 
-  const formatHumanizedTitle = (item: any): string => {
+  const formatHumanizedTitle = (item: unknown): string => {
     const mod = item.modalidadeNome || "Licitação";
     let cleanMod = mod.replace(/\s*-\s*/, " ").trim();
     
@@ -374,7 +374,7 @@ export default function RastreadorPncp({
       title += " SRP";
     }
     
-    const cleanNumber = (numStr: any) => {
+    const cleanNumber = (numStr: unknown) => {
       if (!numStr) return "";
       const parsed = parseInt(String(numStr), 10);
       return isNaN(parsed) ? String(numStr) : String(parsed);
@@ -391,7 +391,7 @@ export default function RastreadorPncp({
     return title;
   };
 
-  const getCategoryForPncpItem = (item: any): string => {
+  const getCategoryForPncpItem = (item: unknown): string => {
     const rawObjeto = item.objetoCompra || item.objeto || "";
     const objLower = rawObjeto.toLowerCase();
     
