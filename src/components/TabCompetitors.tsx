@@ -8,7 +8,7 @@ interface TabProps {
   formatCurrency: (val: number) => string;
   handleAddCompetitor: (name: string, cnpj: string, bid: number) => void;
   handleUpdateCompetitorStatus: (id: string, status: CompetitorBid["status"]) => void;
-  setDeleteConfirm: (v: any) => void;
+  setDeleteConfirm: (v: unknown) => void;
 }
 
 export default function TabCompetitors({
