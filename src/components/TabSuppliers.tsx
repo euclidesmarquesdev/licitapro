@@ -11,14 +11,14 @@ interface TabProps {
   activeSuppliers: SupplierContact[];
   formatCurrency: (val: number) => string;
   handleAddSupplier: (name: string, product: string, contact: string) => void;
-  getCompatibleSuppliers: () => any[];
-  handleImportAllCompatible: (matching: any[]) => void;
-  handleImportCatalogSupplier: (sup: any) => void;
+  getCompatibleSuppliers: () => unknown[];
+  handleImportAllCompatible: (matching: unknown[]) => void;
+  handleImportCatalogSupplier: (sup: unknown) => void;
   handleCreateCustomItem: (desc: string, qty: number, val: number) => void;
   handleDeleteItemPncp: (numero: string) => void;
   handleUpdateSupplierItemPrice: (supplierId: string, itemNumero: string, price: number) => void;
   handleUpdateSupplierStatus: (id: string, status: SupplierContact["status"]) => void;
-  setDeleteConfirm: (v: any) => void;
+  setDeleteConfirm: (v: unknown) => void;
 }
 
 export default function TabSuppliers({
@@ -77,7 +77,7 @@ export default function TabSuppliers({
   // Text pool strictly aligned with the "objeto do edital" (licitacao.objeto)
   const textPool = (licitacao.objeto || "").toLowerCase();
 
-  const getSupplierAffinity = (sup: any) => {
+  const getSupplierAffinity = (sup: unknown) => {
     let score = 0;
     if (sup.categoryKeywords && Array.isArray(sup.categoryKeywords)) {
       sup.categoryKeywords.forEach((kw: string) => {
