@@ -96,9 +96,10 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
   // Log de desenvolvimento removido em produção pelo AutoPatch
               break;
             }
-          } catch (err: unknown) {
-  // Log de desenvolvimento removido em produção pelo AutoPatch
-          }
+          } catch (err) {
+  console.error("[AutoPatch Guard] Falha capturada:", err);
+  // Trate o erro aqui — não engula silenciosamente.
+}
         }
 
         // Busca arquivos
@@ -113,9 +114,10 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
   // Log de desenvolvimento removido em produção pelo AutoPatch
               break;
             }
-          } catch (err: unknown) {
-  // Log de desenvolvimento removido em produção pelo AutoPatch
-          }
+          } catch (err) {
+  console.error("[AutoPatch Guard] Falha capturada:", err);
+  // Trate o erro aqui — não engula silenciosamente.
+}
         }
       }
     }
