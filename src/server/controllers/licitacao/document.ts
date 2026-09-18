@@ -67,7 +67,7 @@ export async function handleGenerateDocument(req: express.Request, res: express.
 
     res.json({ success: true, isMock, data: draft });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Document] Erro:", err);
     const isTimeout = err.message.includes("timeout") || err.message.includes("deadline");
     res.status(500).json({
