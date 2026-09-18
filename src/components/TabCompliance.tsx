@@ -17,8 +17,8 @@ interface AIAuditLog {
   id: string;
   timestamp: string;
   endpoint: string;
-  payload: any;
-  response: any;
+  payload: unknown;
+  response: unknown;
   isMock: boolean;
   signature: string;
 }
@@ -126,7 +126,7 @@ export default function TabCompliance({
                   <select
                     className="w-full text-xs bg-white border border-gray-200 rounded p-2.5 outline-none focus:ring-1 focus:ring-amber-500 font-bold text-slate-800 cursor-pointer"
                     value={modalidadeSim}
-                    onChange={(e) => setSimModalidade(e.target.value as any)}
+                    onChange={(e) => setSimModalidade(e.target.value as unknown)}
                   >
                     <option value="pregao">Pregão Eletrônico ou Dispensa (Margem de 5%)</option>
                     <option value="concorrencia">Concorrência Pública (Margem de 10%)</option>
