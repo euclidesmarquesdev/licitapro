@@ -45,7 +45,7 @@ export async function getClientAuthToken(): Promise<string> {
     try {
       const idToken = await currentUser.getIdToken();
       if (idToken) {
-        console.log('[Firebase] Token real obtido com sucesso.');
+        console.log('[Firebase] [REDACTED] real obtido com sucesso.');
         return idToken;
       }
     } catch (e) {
