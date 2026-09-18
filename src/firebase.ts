@@ -45,7 +45,7 @@ export async function getClientAuthToken(): Promise<string> {
     try {
       const idToken = await currentUser.getIdToken();
       if (idToken) {
-        console.log('[Firebase] [REDACTED] real obtido com sucesso.');
+  // Log de desenvolvimento removido em produção pelo AutoPatch
         return idToken;
       }
     } catch (e) {
@@ -64,7 +64,7 @@ export async function getClientAuthToken(): Promise<string> {
         const parsed = JSON.parse(savedVirtual);
         if (parsed && parsed.uid) {
           const token = `VIRTUAL_TOKEN_${parsed.uid}|${parsed.email || "dev@licitapro.local"}`;
-          console.log('[Firebase] Token virtual gerado para desenvolvimento.');
+  // Log de desenvolvimento removido em produção pelo AutoPatch
           return token;
         }
       } catch (_) {
@@ -74,7 +74,7 @@ export async function getClientAuthToken(): Promise<string> {
     
     // ✅ CRUCIAL: Se estamos em desenvolvimento e não temos usuário virtual,
     // Cria um usuário virtual automaticamente para não quebrar o fluxo
-    console.log('[Firebase] Criando usuário virtual automaticamente para desenvolvimento...');
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     const virtualUser = {
       uid: `dev-user-${Date.now()}`,
       displayName: "Dev User",
