@@ -51,7 +51,7 @@ function rotateLogIfNeeded(filePath: string) {
 }
 
 // Escreve no arquivo
-function writeLog(level: LogLevel, message: string, data?: any) {
+function writeLog(level: LogLevel, message: string, data?: unknown) {
   const timestamp = new Date().toISOString();
   const logEntry = {
     timestamp,
@@ -82,17 +82,17 @@ function writeLog(level: LogLevel, message: string, data?: any) {
                   level === LogLevel.WARN ? "\x1b[33m" :
                   level === LogLevel.INFO ? "\x1b[36m" :
                   level === LogLevel.DEBUG ? "\x1b[90m" : "\x1b[0m";
-    console.log(`${color}[${level}] ${timestamp} - ${message}${data ? " " + JSON.stringify(data) : ""}\x1b[0m`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
   }
 }
 
 // Logger principal
 export const logger = {
-  debug: (message: string, data?: any) => writeLog(LogLevel.DEBUG, message, data),
-  info: (message: string, data?: any) => writeLog(LogLevel.INFO, message, data),
-  warn: (message: string, data?: any) => writeLog(LogLevel.WARN, message, data),
-  error: (message: string, data?: any) => writeLog(LogLevel.ERROR, message, data),
-  fatal: (message: string, data?: any) => writeLog(LogLevel.FATAL, message, data),
+  debug: (message: string, data?: unknown) => writeLog(LogLevel.DEBUG, message, data),
+  info: (message: string, data?: unknown) => writeLog(LogLevel.INFO, message, data),
+  warn: (message: string, data?: unknown) => writeLog(LogLevel.WARN, message, data),
+  error: (message: string, data?: unknown) => writeLog(LogLevel.ERROR, message, data),
+  fatal: (message: string, data?: unknown) => writeLog(LogLevel.FATAL, message, data),
 };
 
 // Middleware para log de requisições
