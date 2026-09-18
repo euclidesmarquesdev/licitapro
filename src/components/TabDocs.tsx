@@ -10,8 +10,8 @@ interface TabProps {
   setNewDocObs: (v: string) => void;
   handleAddDoc: () => void;
   handleToggleDocStatus: (id: string, newStatus: LicitacaoChecklistItem["status"]) => void;
-  handleAttachPncpFile: (file: any) => void;
-  setDeleteConfirm: (confirm: any) => void;
+  handleAttachPncpFile: (file: unknown) => void;
+  setDeleteConfirm: (confirm: unknown) => void;
 }
 
 export default function TabDocs({
