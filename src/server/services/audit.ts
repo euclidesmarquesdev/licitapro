@@ -5,8 +5,8 @@ export interface AIAuditLog {
   id: string;
   timestamp: string;
   endpoint: string;
-  payload: any;
-  response: any;
+  payload: unknown;
+  response: unknown;
   isMock: boolean;
   signature: string;
   previousSignature: string;
@@ -48,7 +48,7 @@ export async function saveAuditLogToFirestore(idToken: string, log: AIAuditLog, 
   try {
     const projectId = firebaseConfig.projectId;
     if (!projectId || !idToken || idToken.startsWith("VIRTUAL_TOKEN_")) {
-      console.log(`[LicitaPro Audit] Sessão offline/virtual detectada para bloco ${log.id}. Mantendo log local em memória.`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       return;
     }
     const databaseId = firebaseConfig.firestoreDatabaseId || "(default)";
@@ -85,7 +85,7 @@ export async function saveAuditLogToFirestore(idToken: string, log: AIAuditLog, 
     if (!res.ok) {
       console.error("[LicitaPro Audit] Falha ao persistir log imutável no Firestore:", await res.text());
     } else {
-      console.log(`[LicitaPro Audit] Bloco de auditoria imutável ${logId} assinado com sucesso.`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     }
   } catch (err) {
     console.error("[LicitaPro Audit] Erro ao sincronizar cadeia de auditoria no Firestore:", err);
@@ -99,7 +99,7 @@ export async function getAuditLogsFromFirestore(idToken: string, userId: string)
   try {
     const projectId = firebaseConfig.projectId;
     if (!projectId || !idToken || idToken.startsWith("VIRTUAL_TOKEN_")) {
-      console.log("[LicitaPro Audit] Sessão offline/virtual. Retornando logs locais em memória.");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       return getInMemoryAuditLogs();
     }
     const databaseId = firebaseConfig.firestoreDatabaseId || "(default)";
@@ -171,8 +171,8 @@ export async function getAuditLogsFromFirestore(idToken: string, userId: string)
  */
 export function addAuditLogEntry(
   endpoint: string,
-  payload: any,
-  response: any,
+  payload: unknown,
+  response: unknown,
   isMock: boolean,
   citations?: { title: string; url: string }[],
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
