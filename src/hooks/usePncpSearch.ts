@@ -41,7 +41,7 @@ export function usePncpSearch() {
   const search = async (params: SearchParams) => {
     // ✅ Evita múltiplas chamadas simultâneas
     if (isLoading) {
-      console.log("[PNCP Search] Já está carregando, ignorando...");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       return;
     }
 
@@ -49,10 +49,10 @@ export function usePncpSearch() {
     setError(null);
 
     try {
-      console.log("[PNCP Search] 🔍 Buscando com params:", params);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
       const token = await getClientAuthToken();
-      console.log("[PNCP Search] 🔑 Token obtido:", token ? "SIM" : "NÃO");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
       const dates = getCalculatedDates(params.dateRange);
 
@@ -78,7 +78,7 @@ export function usePncpSearch() {
       }
 
       const url = `/api/pncp/search?${queryParams.toString()}`;
-      console.log("[PNCP Search] 📡 URL:", url);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
       const response = await fetch(url, {
         headers: {
@@ -86,10 +86,10 @@ export function usePncpSearch() {
         }
       });
 
-      console.log("[PNCP Search] 📊 Status:", response.status);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
       const textResponse = await response.text();
-      console.log("[PNCP Search] 📄 Resposta (primeiros 200 chars):", textResponse.substring(0, 200));
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       
       if (textResponse.trim().startsWith('<!doctype') || textResponse.trim().startsWith('<html')) {
         throw new Error("O servidor retornou uma página de erro.");
@@ -100,7 +100,7 @@ export function usePncpSearch() {
       }
 
       const data = JSON.parse(textResponse);
-      console.log("[PNCP Search] ✅ Dados recebidos:", data);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
       if (data.success && data.data) {
         setResults(data.data.data || []);
@@ -114,7 +114,7 @@ export function usePncpSearch() {
         setTotalPages(1);
         setError(data.error || "Nenhum resultado encontrado");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[PNCP Search] ❌ Erro:", err);
       setError(err.message || "Erro ao buscar editais");
       setResults([]);
