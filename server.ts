@@ -9,7 +9,11 @@ import apiRoutes from "./src/server/routes/api.js";  // ✅ TEM QUE SER ASSIM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import helmet from 'helmet';
 const app = express();
+
+// [AutoPatch] Headers de segurança HTTP estritos
+app.use(helmet());
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -27,7 +31,7 @@ app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 // ✅ ROTAS DA API - PRIMEIRAS (NUNCA SERÃO INTERCEPTADAS)
 // ============================================================
 app.use("/api", apiRoutes);
-console.log("[LicitaPro] Rotas da API registradas em /api");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
 // ============================================================
 // HEALTH CHECK
@@ -53,13 +57,13 @@ if (!isProduction) {
       appType: "spa",
     });
     app.use(vite.middlewares);
-    console.log("[LicitaPro] Vite integrado em modo desenvolvimento");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
   } catch (error) {
     console.warn("[LicitaPro] Vite não disponível:", error);
   }
 }
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[LicitaPro] Servidor rodando em http://localhost:${PORT}`);
-  console.log(`[LicitaPro] API disponível em http://localhost:${PORT}/api`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 });
