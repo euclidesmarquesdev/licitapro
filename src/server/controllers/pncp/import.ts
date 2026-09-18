@@ -177,7 +177,7 @@ export async function handlePncpImport(req: express.Request, res: express.Respon
 /**
  * Enriquecimento com IA
  */
-async function enhanceWithAI(purchaseDetails: unknown, mappedData: any): Promise<{
+async function enhanceWithAI(purchaseDetails: unknown, mappedData: unknown): Promise<{
   checklist: string[];
   competitors: string[];
   usage: { promptTokens: number; completionTokens: number; totalTokens: number };
