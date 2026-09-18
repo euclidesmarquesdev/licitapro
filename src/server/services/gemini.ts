@@ -160,7 +160,7 @@ export async function predictBiddingOutcome(
   sanitizedLicitacao: unknown,
   competitors: unknown[],
   historicalPrices: unknown[]
-): Promise<{ prediction: unknown; citations: unknown[]; isMock: boolean; usage: any }> {
+): Promise<{ prediction: unknown; citations: unknown[]; isMock: boolean; usage: unknown }> {
   if (!isGeminiConfigured) {
     const mockPrediction = {
       level: "MÉDIO-ALTO",
