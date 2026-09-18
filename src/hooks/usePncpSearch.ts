@@ -52,7 +52,7 @@ export function usePncpSearch() {
       console.log("[PNCP Search] 🔍 Buscando com params:", params);
 
       const token = await getClientAuthToken();
-      console.log("[PNCP Search] 🔑 Token obtido:", token ? "SIM" : "NÃO");
+      console.log("[PNCP Search] 🔑 [REDACTED] obtido:", [REDACTED] ? "SIM" : "NÃO");
 
       const dates = getCalculatedDates(params.dateRange);
 
