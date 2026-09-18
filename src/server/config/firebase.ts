@@ -73,7 +73,7 @@ export async function verifyIdToken(idToken: string): Promise<{ uid: string; ema
     });
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
-      console.error("[LicitaPro Firebase] Erro na verificação do token no Google Client-Toolkit:", errBody);
+      console.error("[LicitaPro Firebase] Erro na verificação do [REDACTED] no Google Client-Toolkit:", errBody);
       return null;
     }
     const data = await res.json();
@@ -85,7 +85,7 @@ export async function verifyIdToken(idToken: string): Promise<{ uid: string; ema
       emailVerified: user.emailVerified
     };
   } catch (err) {
-    console.error("[LicitaPro Firebase] Falha geral ao verificar token via API do Google Auth:", err);
+    console.error("[LicitaPro Firebase] Falha geral ao verificar [REDACTED] via API do Google Auth:", err);
     return null;
   }
 }

@@ -49,7 +49,7 @@ export async function getClientAuthToken(): Promise<string> {
         return idToken;
       }
     } catch (e) {
-      console.warn('[Firebase] Falha ao obter token nativo:', e);
+      console.warn('[Firebase] Falha ao obter [REDACTED] nativo:', e);
     }
   }
 
@@ -64,7 +64,7 @@ export async function getClientAuthToken(): Promise<string> {
         const parsed = JSON.parse(savedVirtual);
         if (parsed && parsed.uid) {
           const token = `VIRTUAL_TOKEN_${parsed.uid}|${parsed.email || "dev@licitapro.local"}`;
-          console.log('[Firebase] Token virtual gerado para desenvolvimento.');
+          console.log('[Firebase] [REDACTED] virtual gerado para desenvolvimento.');
           return token;
         }
       } catch (_) {
