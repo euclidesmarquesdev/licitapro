@@ -6,7 +6,7 @@ import { showToast } from "../utils/toast";
 export function useFornecedores(
   licitacao: Licitacao,
   onUpdate: (updated: Licitacao) => void,
-  onCheckCelebration: (newChecklist?: any[], newSuppliers?: SupplierContact[]) => void
+  onCheckCelebration: (newChecklist?: unknown[], newSuppliers?: SupplierContact[]) => void
 ) {
   const activeSuppliers = useMemo(() => {
     return (licitacao.suppliers || []).filter(s => s && s.name && !s.name.startsWith("[PNCP]"));
@@ -54,7 +54,7 @@ export function useFornecedores(
     try {
       const saved = localStorage.getItem("LICI_TRACK_V1_general_suppliers");
       let currentList = saved ? JSON.parse(saved) : [...MOCK_CATALOG_SUPPLIERS];
-      if (!currentList.some((s: any) => s.name.toLowerCase() === name.toLowerCase())) {
+      if (!currentList.some((s: unknown) => s.name.toLowerCase() === name.toLowerCase())) {
         const globalSup = {
           name,
           product: product || "Produto Geral",

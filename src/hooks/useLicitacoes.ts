@@ -78,7 +78,7 @@ async function migrateLocalDataToFirestore(userId: string): Promise<{ migrated: 
       return { migrated: 0, message: "Nenhum dado local para migrar." };
     }
 
-    console.log(`[Migração] Encontrados ${localItems.length} itens locais para migrar.`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
     const batch = writeBatch(db);
     let migratedCount = 0;
@@ -98,7 +98,7 @@ async function migrateLocalDataToFirestore(userId: string): Promise<{ migrated: 
     }
 
     await batch.commit();
-    console.log(`[Migração] ${migratedCount} itens migrados com sucesso.`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
     await clearLocalLicitacoes();
     localStorage.removeItem("LICI_TRACK_V1_guest_data");
@@ -117,7 +117,7 @@ async function migrateLocalDataToFirestore(userId: string): Promise<{ migrated: 
 }
 
 // ✅ EXPORTAÇÃO CORRETA DA FUNÇÃO useLicitacoes
-export function useLicitacoes(user: any | null, authLoading: boolean, isGuestMode: boolean) {
+export function useLicitacoes(user: unknown | null, authLoading: boolean, isGuestMode: boolean) {
   const [licitacoes, setLicitacoes] = useState<Licitacao[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [selectedLicitacaoId, setSelectedLicitacaoId] = useState<string | null>(null);

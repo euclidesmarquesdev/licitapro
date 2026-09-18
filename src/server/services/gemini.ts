@@ -23,7 +23,7 @@ export async function extractBiddingMetadata(
   textToAnalyze: string,
   sanitizedUrl: string,
   useUrlContextTool: boolean
-): Promise<{ parsed: any; isMock: boolean; usage: any }> {
+): Promise<{ parsed: unknown; isMock: boolean; usage: any }> {
   if (!isGeminiConfigured) {
     const mockData = {
       edital: "Pregão Eletrônico SRP 35/2026",
@@ -76,7 +76,7 @@ export async function extractBiddingMetadata(
     ? `${promptTemplate}\n\nAnalise o arquivo ou conteúdo principal da página pública contida na seguinte URL real: ${sanitizedUrl}`
     : `${promptTemplate}\n\nTexto extraído do edital:\n\"\"\"\n${textToAnalyze.substring(0, 32000)}\n\"\"\"`;
 
-  const config: any = {
+  const config: unknown = {
     systemInstruction: "Você é um Analista de Licitações Sênior especialista em compras públicas brasileiras (Leis 14.133/2021 e 8.666/93). Extraia dados com precisão total, e monte o checklist de habilitação baseado no edital analisado.",
     responseMimeType: "application/json",
     responseSchema: {
@@ -157,10 +157,10 @@ export async function extractBiddingMetadata(
  * Predicts bid strategy parameters using gemini-3.5-flash (Enhanced with Search Grounding / Citations)
  */
 export async function predictBiddingOutcome(
-  sanitizedLicitacao: any,
-  competitors: any[],
-  historicalPrices: any[]
-): Promise<{ prediction: any; citations: any[]; isMock: boolean; usage: any }> {
+  sanitizedLicitacao: unknown,
+  competitors: unknown[],
+  historicalPrices: unknown[]
+): Promise<{ prediction: unknown; citations: any[]; isMock: boolean; usage: any }> {
   if (!isGeminiConfigured) {
     const mockPrediction = {
       level: "MÉDIO-ALTO",
@@ -238,10 +238,10 @@ export async function predictBiddingOutcome(
 
   // Extract grounding chunks/citations
   const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-  const citations = groundingChunks?.map((chunk: any) => ({
+  const citations = groundingChunks?.map((chunk: unknown) => ({
     title: chunk.web?.title || "Diário Oficial / Portal de Compras",
     url: chunk.web?.uri
-  })).filter((c: any) => c.url) || [];
+  })).filter((c: unknown) => c.url) || [];
 
   if (citations.length > 0) {
     parsedJSON._sources = citations;
@@ -261,9 +261,9 @@ export async function predictBiddingOutcome(
  */
 export async function draftGovernmentDocument(
   docType: string,
-  sanitizedLicitacao: any,
-  sanitizedCompanyDetails: any
-): Promise<{ draft: any; isMock: boolean; usage: any }> {
+  sanitizedLicitacao: unknown,
+  sanitizedCompanyDetails: unknown
+): Promise<{ draft: unknown; isMock: boolean; usage: any }> {
   if (!isGeminiConfigured) {
     const mockDoc = {
       documentTitle: `Declaração para ${sanitizedLicitacao.edital}`,

@@ -5,11 +5,11 @@ const MAX_PAGES = 2; // 🔥 REDUZIDO para 2 páginas (evita rate limit)
 const CACHE_TTL = 60000; // 🔥 1 minuto de cache
 
 // 🔥 Cache em memória
-const cache = new Map<string, { data: any; timestamp: number }>();
+const cache = new Map<string, { data: unknown; timestamp: number }>();
 
 export async function handlePncpSearch(req: express.Request, res: express.Response) {
   try {
-    console.log("[PNCP Search] ✅ Buscando editais...");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     
     const termo = req.query.termo ? String(req.query.termo) : undefined;
     const uf = req.query.uf ? String(req.query.uf) : undefined;
@@ -29,7 +29,7 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     // 🔥 Verificar cache
     const cached = cache.get(cacheKey);
     if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-      console.log("[PNCP Search] ✅ Usando cache");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       return res.json(cached.data);
     }
 
@@ -57,12 +57,12 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
       modalidadeParaEnviar = "6";
     }
 
-    console.log(`[PNCP Search] 📅 Data Inicial: ${dataInicialStr}`);
-    console.log(`[PNCP Search] 📅 Data Final: ${dataFinalStr}`);
-    console.log(`[PNCP Search] 📌 Modalidade: ${modalidadeParaEnviar}`);
-    console.log(`[PNCP Search] 📌 UF: ${uf || "TODOS"}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
+  // Log de desenvolvimento removido em produção pelo AutoPatch
+  // Log de desenvolvimento removido em produção pelo AutoPatch
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
-    let allItems: any[] = [];
+    let allItems: unknown[] = [];
 
     for (let p = 1; p <= MAX_PAGES; p++) {
       try {
@@ -78,7 +78,7 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         }
 
         const apiUrl = `${baseUrl}?${params.toString()}`;
-        console.log(`[PNCP Search] 📄 Página ${p}...`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
         
         // 🔥 HEADERS IDÊNTICOS AO NAVEGADOR
         const response = await fetch(apiUrl, {
@@ -107,18 +107,18 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
         const apiData = JSON.parse(responseText);
         const items = apiData.data || apiData.resultado || [];
         
-        console.log(`[PNCP Search] Página ${p}: ${items.length} itens`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
         allItems.push(...items);
         
         if (items.length < PAGE_SIZE) {
-          console.log(`[PNCP Search] Última página (${items.length} itens).`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
           break;
         }
         
         // 🔥 DELAY MAIOR entre requisições
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.warn(`[PNCP Search] Erro na página ${p}:`, err.message);
         // 🔥 Se errar, espera mais e tenta de novo
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -126,13 +126,13 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     }
 
     const uniqueItems = removeDuplicates(allItems);
-    console.log(`[PNCP Search] ✅ Total único: ${uniqueItems.length} itens`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
     // 🔥 FILTRO: Remover expirados
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
-    const itemsValidos = uniqueItems.filter((item: any) => {
+    const itemsValidos = uniqueItems.filter((item: unknown) => {
       const dataEncerramento = item.dataEncerramentoProposta;
       
       if (!dataEncerramento) return true;
@@ -147,31 +147,31 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
     });
 
     const removidos = uniqueItems.length - itemsValidos.length;
-    console.log(`[PNCP Search] 📌 ${removidos} editais removidos. Restam ${itemsValidos.length} editais válidos.`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
     let filteredByValue = itemsValidos;
     if (valorMinimo !== undefined || valorMaximo !== undefined) {
       filteredByValue = filterByValue(itemsValidos, valorMinimo, valorMaximo);
-      console.log(`[PNCP Search] 💰 Após filtro por valor: ${filteredByValue.length} itens`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     }
 
     const sortedItems = sortByDate(filteredByValue);
-    console.log(`[PNCP Search] 📅 ${sortedItems.length} itens ordenados por dataAtualizacao`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
     if (sortedItems.length > 0) {
-      console.log(`[PNCP Search] 📅 10 mais recentes:`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       sortedItems.slice(0, 10).forEach((item, i) => {
         const dataAtualizacao = item.dataAtualizacao || item.dataPublicacaoPncp || "data desconhecida";
         const dataEncerramento = item.dataEncerramentoProposta || "sem data";
         const orgao = item.orgaoEntidade?.razaoSocial || "Órgão";
-        console.log(`  ${i+1}. Atualização: ${dataAtualizacao} | Encerramento: ${dataEncerramento} | ${orgao}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       });
     }
 
     let finalItems = sortedItems;
     if (searchTerm) {
       finalItems = filterByTerm(sortedItems, searchTerm);
-      console.log(`[PNCP Search] Após filtro por termo: ${finalItems.length} itens`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     }
 
     const totalRegistros = finalItems.length;
@@ -205,7 +205,7 @@ export async function handlePncpSearch(req: express.Request, res: express.Respon
 
     res.json(responseData);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[PNCP Search] ❌ Erro:", error);
     res.status(500).json({
       success: false,
@@ -251,7 +251,7 @@ function parseDateString(dateStr: string): Date | null {
   }
 }
 
-function removeDuplicates(items: any[]): any[] {
+function removeDuplicates(items: unknown[]): any[] {
   const seen = new Set();
   return items.filter(item => {
     const id = item.numeroControlePNCP || item.id;
@@ -261,7 +261,7 @@ function removeDuplicates(items: any[]): any[] {
   });
 }
 
-function filterByValue(items: any[], valorMinimo?: number, valorMaximo?: number): any[] {
+function filterByValue(items: unknown[], valorMinimo?: number, valorMaximo?: number): any[] {
   return items.filter(item => {
     const valor = item.valorTotalEstimado || item.valorEstimado || 0;
     if (valor === 0) {
@@ -274,7 +274,7 @@ function filterByValue(items: any[], valorMinimo?: number, valorMaximo?: number)
   });
 }
 
-function sortByDate(items: any[]): any[] {
+function sortByDate(items: unknown[]): any[] {
   return [...items].sort((a, b) => {
     const dateA = a.dataAtualizacao || a.dataAtualizacaoGlobal || a.dataPublicacaoPncp || "";
     const dateB = b.dataAtualizacao || b.dataAtualizacaoGlobal || b.dataPublicacaoPncp || "";
@@ -287,7 +287,7 @@ function sortByDate(items: any[]): any[] {
   });
 }
 
-function filterByTerm(items: any[], term: string): any[] {
+function filterByTerm(items: unknown[], term: string): any[] {
   const normalize = (text: string) => {
     return (text || "")
       .toLowerCase()
@@ -298,7 +298,7 @@ function filterByTerm(items: any[], term: string): any[] {
 
   const keyword = normalize(term);
 
-  return items.filter((item: any) => {
+  return items.filter((item: unknown) => {
     const orgao = normalize(item.orgaoEntidade?.razaoSocial || "");
     const objeto = normalize(item.objetoCompra || item.objeto || "");
     const pncpId = normalize(item.numeroControlePNCP || "");

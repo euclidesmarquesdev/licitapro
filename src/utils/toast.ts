@@ -1,14 +1,14 @@
 import { toast } from "sonner";
 
 export const showToast = {
-  success: (message: string, description?: string, options?: any) => {
+  success: (message: string, description?: string, options?: unknown) => {
     toast.success(message, {
       description,
       ...options
     });
   },
   
-  error: (message: string, description?: string, options?: any) => {
+  error: (message: string, description?: string, options?: unknown) => {
     toast.error(message, {
       description,
       duration: 6000,
@@ -16,14 +16,14 @@ export const showToast = {
     });
   },
   
-  warning: (message: string, description?: string, options?: any) => {
+  warning: (message: string, description?: string, options?: unknown) => {
     toast.warning(message, {
       description,
       ...options
     });
   },
   
-  info: (message: string, description?: string, options?: any) => {
+  info: (message: string, description?: string, options?: unknown) => {
     toast.info(message, {
       description,
       ...options
@@ -43,9 +43,9 @@ export const showToast = {
     messages: {
       loading: string;
       success: string | ((data: T) => string);
-      error: string | ((error: any) => string);
+      error: string | ((error: unknown) => string);
     },
-    options?: any
+    options?: unknown
   ) => {
     return toast.promise(promise, {
       loading: messages.loading,

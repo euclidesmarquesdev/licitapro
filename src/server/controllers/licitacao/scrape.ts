@@ -122,7 +122,7 @@ export async function handleScrapeBidding(req: express.Request, res: express.Res
 
     res.json({ success: true, isMock, data: parsed });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Scrape] Erro:", err);
     const isTimeout = err.message.includes("timeout") || err.message.includes("deadline");
     res.status(500).json({

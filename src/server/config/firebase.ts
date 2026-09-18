@@ -10,15 +10,15 @@ try {
     initializeApp();
   }
   isFirebaseAdminInitialized = true;
-  console.log("[LicitaPro Firebase] Firebase Admin SDK inicializado com sucesso.");
-} catch (error: any) {
+  // Log de desenvolvimento removido em produção pelo AutoPatch
+} catch (error: unknown) {
   console.warn("[LicitaPro Firebase] Alerta: Falha ao inicializar o Firebase Admin SDK (pode ser ausência de credenciais default no localdev). Utilizando REST API de fallback. Erro:", error.message);
 }
 
 // Load firebase config JSON for REST fallbacks & cloud logging parameters
-export let firebaseConfig: any = {};
+export let firebaseConfig: unknown = {};
 try {
-  const rawConfig = fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8");
+  const rawConfig = await fs.promises.readFile(path.join(process.cwd(), "firebase-applet-config.json"), "utf8");
   firebaseConfig = JSON.parse(rawConfig);
 } catch (error) {
   console.warn("[LicitaPro Firebase] Alerta: Não foi possível obter o firebase-applet-config.json. Backend operando em modo offline.");
@@ -49,7 +49,7 @@ export async function verifyIdToken(idToken: string): Promise<{ uid: string; ema
         email: decodedToken.email,
         emailVerified: decodedToken.email_verified
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn("[LicitaPro Firebase] Verificação nativa Admin SDK falhou. Tentando REST API fallback... Erro:", err.message);
     }
   }

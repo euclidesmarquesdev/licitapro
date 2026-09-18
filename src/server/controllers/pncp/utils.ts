@@ -33,7 +33,7 @@ export async function fetchWithRedirects(
       if ([301, 302, 307, 308].includes(response.status)) {
         const location = response.headers.get("location");
         if (!location) {
-          console.log(`[PNCP] Redirecionamento sem Location em ${currentUrl}, tentando com follow...`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
           // Tenta novamente com redirect automático
           const followResponse = await fetch(currentUrl, {
             headers: {
@@ -45,13 +45,13 @@ export async function fetchWithRedirects(
           return followResponse;
         }
         currentUrl = new URL(location, currentUrl).toString();
-        console.log(`[PNCP] Seguindo redirecionamento: ${currentUrl}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
         redirects++;
         continue;
       }
 
       return response;
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearTimeout(timeoutId);
       if (err.name === "AbortError") {
         throw new Error(`Timeout após ${timeoutMs}ms na requisição ao PNCP`);
@@ -138,9 +138,9 @@ export function buildPncpUrls(cnpj: string, ano: string, sequencial: string): {
  * Mapeia dados do PNCP para o formato padronizado da aplicação
  */
 export function mapPncpData(
-  purchaseDetails: any,
-  itemsList: any[],
-  filesList: any[]
+  purchaseDetails: unknown,
+  itemsList: unknown[],
+  filesList: unknown[]
 ): {
   edital: string;
   orgao: string;
@@ -157,8 +157,8 @@ export function mapPncpData(
   modoDisputa: string;
   dataInicioPropostas: string;
   dataFimPropostas: string;
-  itensPncp: any[];
-  arquivosPncp: any[];
+  itensPncp: unknown[];
+  arquivosPncp: unknown[];
 } {
   // Extrai dados básicos
   const org = purchaseDetails.orgaoEntidade?.razaoSocial || purchaseDetails.orgaoEntidade?.nomeOrgao || "Órgão do PNCP";
@@ -205,7 +205,7 @@ export function mapPncpData(
   }
 
   // Mapeia arquivos
-  const mappedArquivos = filesList.map((file: any, index: number) => ({
+  const mappedArquivos = filesList.map((file: unknown, index: number) => ({
     id: `pncp-doc-${index + 1}-${Date.now()}`,
     nome: file.nomeOriginal || file.nome || file.titulo || `Documento_${index + 1}.pdf`,
     descricao: file.tipoDocumentoNome || file.descricao || "Documentação Oficial",
@@ -214,7 +214,7 @@ export function mapPncpData(
   }));
 
   // Mapeia itens
-  const mappedItens = itemsList.map((it: any) => {
+  const mappedItens = itemsList.map((it: unknown) => {
     const vUnit = it.valorUnitarioEstimado || it.valorEstimado || it.valorMaximoUnitario || 0;
     const q = it.quantidade || 1;
     return {

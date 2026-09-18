@@ -65,7 +65,7 @@ router.get("/ready", async (req, res) => {
       status: "ready",
       timestamp: new Date().toISOString()
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     res.status(503).json({
       status: "not_ready",
       reason: error.message || "Erro desconhecido",
@@ -98,7 +98,7 @@ router.get("/tests", async (req, res) => {
       },
       results
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error("Erro ao executar testes", { error: error.message || "Erro desconhecido" });
     res.status(500).json({
       success: false,
@@ -160,7 +160,7 @@ router.get("/diagnostic", async (req, res) => {
     };
     
     res.json(diagnostic);
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error("Erro no diagnóstico", { error: error.message || "Erro desconhecido" });
     res.status(500).json({
       error: error.message || "Erro ao gerar diagnóstico",

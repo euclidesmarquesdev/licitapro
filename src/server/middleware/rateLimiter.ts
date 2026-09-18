@@ -31,7 +31,7 @@ export async function rateLimiterMiddleware(
         }
         return next();
       }
-    } catch (redisErr: any) {
+    } catch (redisErr: unknown) {
       console.warn("[LicitaPro RateLimiter] Falha na validação Redis, recorrendo ao cache local:", redisErr.message);
     }
   }

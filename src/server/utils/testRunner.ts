@@ -8,7 +8,7 @@ export interface TestResult {
   status: "PASS" | "FAIL" | "SKIP" | "WARN";
   message?: string;
   duration: number;
-  details?: any;
+  details?: unknown;
 }
 
 export interface TestSuite {
@@ -24,7 +24,7 @@ export interface TestSuite {
 export async function testFirebaseConnection(): Promise<TestResult> {
   const start = Date.now();
   try {
-    const token = process.env.TEST_TOKEN || "VIRTUAL_TOKEN_test|test@test.com";
+    const token = process.env.TEST_TOKEN || (() => { throw new Error("Faltando variável obrigatória: TEST_TOKEN") })();
     const result = await verifyIdToken(token);
     
     if (result && result.uid) {

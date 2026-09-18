@@ -29,7 +29,7 @@ export function startBaddJobWorker() {
   const worker = new Worker(
     "licitapro-scraping-queue",
     async (job: Job<ScraperJobPayload>) => {
-      console.log(`[LicitaPro worker] Iniciando Processamento assíncrono do Job #${job.id}:`, job.data);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       const { url } = job.data;
 
       // Simulate step increments
@@ -39,7 +39,7 @@ export function startBaddJobWorker() {
       const { parsed, usage } = await extractBiddingMetadata("", url, true);
       await job.updateProgress(80);
 
-      console.log(`[LicitaPro worker] Concluído scraping assíncrono para ${url}. Consumo:`, usage);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       await job.updateProgress(100);
 
       return {
@@ -56,7 +56,7 @@ export function startBaddJobWorker() {
   );
 
   worker.on("completed", (job) => {
-    console.log(`[LicitaPro worker] Fila de tarefas concluiu o Job #${job.id} com sucesso!`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
   });
 
   worker.on("failed", (job, err) => {
@@ -78,7 +78,7 @@ export async function scheduleAsyncScraper(payload: ScraperJobPayload) {
         delay: 5000 // Exponential backoff starting from 5 seconds
       }
     });
-    console.log(`[LicitaPro worker] Novo job de scraping agendado com sucesso! ID: ${job.id}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     return job;
   } catch (err) {
     console.error("[LicitaPro worker] Erro ao registrar job assíncrono na fila BullMQ:", err);

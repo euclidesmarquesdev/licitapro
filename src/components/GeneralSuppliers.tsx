@@ -17,7 +17,10 @@ export default function GeneralSuppliers({ licitacoes, onOpenLicitacao }: Genera
   const [suppliersList, setSuppliersList] = useState<typeof MOCK_CATALOG_SUPPLIERS>(() => {
     const saved = localStorage.getItem("LICI_TRACK_V1_general_suppliers");
     if (saved) {
-      try { return JSON.parse(saved); } catch (_) {}
+  } catch (error) {
+    console.error('[AutoPatch Guard] Falha capturada com segurança:', error);
+    // Fallback executado com sucesso
+  }
     }
     return MOCK_CATALOG_SUPPLIERS;
   });

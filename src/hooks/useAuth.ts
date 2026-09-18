@@ -22,7 +22,7 @@ export function useAuth() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         // Usuário autenticado via Firebase
-        console.log('[useAuth] Usuário Firebase detectado:', currentUser.email);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
         setUser(currentUser);
         setIsGuestMode(false);
       } else {
@@ -35,7 +35,7 @@ export function useAuth() {
           if (savedVirtual) {
             try {
               const parsed = JSON.parse(savedVirtual);
-              console.log('[useAuth] Usuário virtual detectado:', parsed.email);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
               setUser(parsed);
               setIsGuestMode(false);
               setAuthLoading(false);
@@ -46,7 +46,7 @@ export function useAuth() {
           }
           
           // ✅ CRUCIAL: Se não há usuário virtual, cria um automaticamente
-          console.log('[useAuth] Criando usuário virtual automaticamente...');
+  // Log de desenvolvimento removido em produção pelo AutoPatch
           const virtualUser = getVirtualUser();
           localStorage.setItem("LICI_TRACK_V1_virtual_user", JSON.stringify(virtualUser));
           setUser(virtualUser);
