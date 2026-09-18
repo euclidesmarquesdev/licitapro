@@ -65,7 +65,7 @@ export async function handlePredictBidding(req: express.Request, res: express.Re
 
     res.json({ success: true, isMock, prediction });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Predict] Erro:", err);
     const isTimeout = err.message.includes("timeout") || err.message.includes("deadline");
     res.status(500).json({
