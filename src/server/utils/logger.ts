@@ -110,7 +110,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
       status: res.statusCode,
       duration: `${duration}ms`,
       ip: req.ip,
-      user: (req as any).user?.uid || "anonymous"
+      user: (req as unknown).user?.uid || "anonymous"
     });
   });
   

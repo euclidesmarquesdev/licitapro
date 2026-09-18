@@ -12,7 +12,7 @@ const getVirtualUser = () => ({
 });
 
 export function useAuth() {
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<unknown | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isGuestMode, setIsGuestMode] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);

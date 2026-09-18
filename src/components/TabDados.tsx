@@ -39,7 +39,7 @@ interface TabProps {
   setDataInicioPropostas: (v: string) => void;
   dataFimPropostas: string;
   setDataFimPropostas: (v: string) => void;
-  handleAttachPncpFile: (file: any) => void;
+  handleAttachPncpFile: (file: unknown) => void;
   scrapeUrl: string;
   setScrapeUrl: (v: string) => void;
   pasteText: string;

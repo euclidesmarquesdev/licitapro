@@ -42,7 +42,7 @@ export default function BackupModal({
       URL.revokeObjectURL(url);
       
       setSuccessMsg("Backup gerado e baixado com sucesso! Salve este arquivo em um local seguro.");
-    } catch (err: any) {
+    } catch (err: unknown) {
       setErrorMsg("Falha ao exportar seus lances: " + err.message);
     } finally {
       setLoading(false);
@@ -71,7 +71,7 @@ export default function BackupModal({
         } else {
           setErrorMsg(res.message);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         setErrorMsg("Falha na leitura do arquivo JSON: " + err.message);
       } finally {
         setLoading(false);

@@ -32,7 +32,7 @@ interface CacheEntry {
 }
 const apiCache = new Map<string, CacheEntry>();
 
-export async function getCachedData(key: string): Promise<any | null> {
+export async function getCachedData(key: string): Promise<unknown | null> {
   if (isRedisConnected && redis) {
     try {
       const val = await redis.get(key);
