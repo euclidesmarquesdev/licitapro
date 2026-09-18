@@ -65,7 +65,7 @@ export async function deleteLocalLicitacao(id: string): Promise<void> {
 export async function clearLocalLicitacoes(): Promise<void> {
   try {
     await localDb.licitacoes.clear();
-    console.log("[IndexedDB] Todos os dados locais foram limpos com sucesso.");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
   } catch (err) {
     console.error("[IndexedDB] Erro ao limpar dados locais:", err);
     throw err;
@@ -79,7 +79,7 @@ export async function clearLocalLicitacoesByUser(userId: string): Promise<void> 
     const ids = items.map(item => item.id);
     if (ids.length > 0) {
       await localDb.licitacoes.bulkDelete(ids);
-      console.log(`[IndexedDB] ${ids.length} itens do usuário ${userId} foram removidos.`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     }
   } catch (err) {
     console.error("[IndexedDB] Erro ao limpar dados do usuário:", err);
@@ -176,7 +176,7 @@ export async function importLocalDbBackup(jsonString: string): Promise<{ success
       importedCount: Array.isArray(licitacoes) ? licitacoes.length : 0, 
       message: "Backup integrado com sucesso! Todo o banco local foi reestabelecido." 
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Erro na restauração de backup:", err);
     return { success: false, importedCount: 0, message: "Erro ao decodificar a carga de backup: " + err.message };
   }
