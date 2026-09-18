@@ -126,7 +126,7 @@ export default function App() {
       return;
     }
 
-    console.log("[App] 🔍 Executando busca inicial do PNCP...");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     initialSearchDone.current = true;
     
     handlePncpSearch({
