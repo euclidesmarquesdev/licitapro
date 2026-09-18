@@ -22,7 +22,7 @@ export async function handleGetUsageStats(req: express.Request, res: express.Res
     }
 
     // Busca logs do usuário
-    let userLogs: any[] = [];
+    let userLogs: unknown[] = [];
     try {
       userLogs = await getAuditLogsFromFirestore(token, verifiedUser.uid);
     } catch {
@@ -45,13 +45,13 @@ export async function handleGetUsageStats(req: express.Request, res: express.Res
       }
     });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Stats] Erro:", err);
     res.status(500).json({ error: "Erro ao compilar estatísticas." });
   }
 }
 
-function calculateUserStats(logs: any[]) {
+function calculateUserStats(logs: unknown[]) {
   let requestsCount = logs.length;
   let promptTokens = 0;
   let completionTokens = 0;
