@@ -15,7 +15,7 @@ import {
 
 const router = express.Router();
 
-console.log("[api.ts] 🔧 Registrando rotas...");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
 // ============================================================
 // RATE LIMITER
@@ -26,10 +26,10 @@ router.use(rateLimiterMiddleware);
 // ROTA PNCP SEARCH
 // ============================================================
 router.get("/pncp/search", authMiddleware, handlePncpSearch);
-console.log("[api.ts] ✅ GET /pncp/search registrada");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
 router.post("/pncp/import", authMiddleware, handlePncpImport);
-console.log("[api.ts] ✅ POST /pncp/import registrada");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
 router.post("/licitacoes/scrape", authMiddleware, handleScrapeBidding);
 router.post("/licitacoes/predict", authMiddleware, handlePredictBidding);
@@ -42,7 +42,7 @@ router.get("/usage", authMiddleware, handleGetUsageStats);
 // ROTA 404
 // ============================================================
 router.use((req, res) => {
-  console.log(`[api.ts] ❌ Rota não encontrada: ${req.method} ${req.path}`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
   res.status(404).json({
     error: "Rota da API não encontrada",
     path: req.path,
@@ -50,6 +50,6 @@ router.use((req, res) => {
   });
 });
 
-console.log("[api.ts] ✅ Todas as rotas registradas");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 
 export default router;
