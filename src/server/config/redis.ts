@@ -1,7 +1,7 @@
 import Redis from "ioredis";
 
 const redisUrl = process.env.REDIS_URL;
-export let redis: any = null;
+export let redis: unknown = null;
 export let isRedisConnected = false;
 
 if (redisUrl) {
@@ -12,13 +12,13 @@ if (redisUrl) {
     });
     redis.on("connect", () => {
       isRedisConnected = true;
-      console.log("[LicitaPro Redis] Conectado ao servidor Redis com sucesso.");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     });
-    redis.on("error", (err: any) => {
+    redis.on("error", (err: unknown) => {
       isRedisConnected = false;
       console.warn("[LicitaPro Redis] Erro ou desconexão no cliente Redis (utilizando pool em memória temporariamente):", err.message);
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[LicitaPro Redis] Falha ao instanciar cliente Redis:", err.message);
   }
 } else {
@@ -27,7 +27,7 @@ if (redisUrl) {
 
 // In-Memory cache definition
 interface CacheEntry {
-  data: any;
+  data: unknown;
   expiry: number;
 }
 const apiCache = new Map<string, CacheEntry>();
@@ -37,17 +37,17 @@ export async function getCachedData(key: string): Promise<any | null> {
     try {
       const val = await redis.get(key);
       if (val) {
-        console.log(`[LicitaPro Cache] Cache HIT para chave: ${key} (via Redis)`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
         return JSON.parse(val);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn("[LicitaPro Redis Cache] Falha ao ler do Redis:", err.message);
     }
   }
   
   const cached = apiCache.get(key);
   if (cached && cached.expiry > Date.now()) {
-    console.log(`[LicitaPro Cache] Cache HIT para chave: ${key} (via Memória)`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
     return cached.data;
   }
   if (cached) {
@@ -56,20 +56,20 @@ export async function getCachedData(key: string): Promise<any | null> {
   return null;
 }
 
-export async function setCachedData(key: string, data: any, ttlMs: number = 10 * 60 * 1000) {
+export async function setCachedData(key: string, data: unknown, ttlMs: number = 10 * 60 * 1000) {
   if (isRedisConnected && redis) {
     try {
       const ttlSeconds = Math.max(1, Math.floor(ttlMs / 1000));
       await redis.set(key, JSON.stringify(data), "EX", ttlSeconds);
-      console.log(`[LicitaPro Cache] Cache SET para chave: ${key} (via Redis, TTL de ${ttlSeconds}s)`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       return;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn("[LicitaPro Redis Cache] Falha ao gravar no Redis:", err.message);
     }
   }
 
   apiCache.set(key, { data, expiry: Date.now() + ttlMs });
-  console.log(`[LicitaPro Cache] Cache SET para chave: ${key} (via Memória, TTL de ${ttlMs / 1000}s)`);
+  // Log de desenvolvimento removido em produção pelo AutoPatch
 }
 
 export function getCacheSize(): number {
