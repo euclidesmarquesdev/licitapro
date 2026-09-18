@@ -251,7 +251,7 @@ function parseDateString(dateStr: string): Date | null {
   }
 }
 
-function removeDuplicates(items: unknown[]): any[] {
+function removeDuplicates(items: unknown[]): unknown[] {
   const seen = new Set();
   return items.filter(item => {
     const id = item.numeroControlePNCP || item.id;
@@ -261,7 +261,7 @@ function removeDuplicates(items: unknown[]): any[] {
   });
 }
 
-function filterByValue(items: unknown[], valorMinimo?: number, valorMaximo?: number): any[] {
+function filterByValue(items: unknown[], valorMinimo?: number, valorMaximo?: number): unknown[] {
   return items.filter(item => {
     const valor = item.valorTotalEstimado || item.valorEstimado || 0;
     if (valor === 0) {
@@ -274,7 +274,7 @@ function filterByValue(items: unknown[], valorMinimo?: number, valorMaximo?: num
   });
 }
 
-function sortByDate(items: unknown[]): any[] {
+function sortByDate(items: unknown[]): unknown[] {
   return [...items].sort((a, b) => {
     const dateA = a.dataAtualizacao || a.dataAtualizacaoGlobal || a.dataPublicacaoPncp || "";
     const dateB = b.dataAtualizacao || b.dataAtualizacaoGlobal || b.dataPublicacaoPncp || "";
@@ -287,7 +287,7 @@ function sortByDate(items: unknown[]): any[] {
   });
 }
 
-function filterByTerm(items: unknown[], term: string): any[] {
+function filterByTerm(items: unknown[], term: string): unknown[] {
   const normalize = (text: string) => {
     return (text || "")
       .toLowerCase()
