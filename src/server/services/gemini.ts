@@ -23,7 +23,7 @@ export async function extractBiddingMetadata(
   textToAnalyze: string,
   sanitizedUrl: string,
   useUrlContextTool: boolean
-): Promise<{ parsed: unknown; isMock: boolean; usage: any }> {
+): Promise<{ parsed: unknown; isMock: boolean; usage: unknown }> {
   if (!isGeminiConfigured) {
     const mockData = {
       edital: "Pregão Eletrônico SRP 35/2026",
@@ -160,7 +160,7 @@ export async function predictBiddingOutcome(
   sanitizedLicitacao: unknown,
   competitors: unknown[],
   historicalPrices: unknown[]
-): Promise<{ prediction: unknown; citations: any[]; isMock: boolean; usage: any }> {
+): Promise<{ prediction: unknown; citations: unknown[]; isMock: boolean; usage: any }> {
   if (!isGeminiConfigured) {
     const mockPrediction = {
       level: "MÉDIO-ALTO",
@@ -263,7 +263,7 @@ export async function draftGovernmentDocument(
   docType: string,
   sanitizedLicitacao: unknown,
   sanitizedCompanyDetails: unknown
-): Promise<{ draft: unknown; isMock: boolean; usage: any }> {
+): Promise<{ draft: unknown; isMock: boolean; usage: unknown }> {
   if (!isGeminiConfigured) {
     const mockDoc = {
       documentTitle: `Declaração para ${sanitizedLicitacao.edital}`,
