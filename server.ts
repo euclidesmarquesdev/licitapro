@@ -63,7 +63,20 @@ if (!isProduction) {
   }
 }
 
+// [AutoPatch] Middleware Global Centralizado de Erros
+app.use((err: any, _req: any, res: any, _next: any) => {
+  console.error('[Unhandled Server Error]', err.message);
+  res.status(500).json({ error: 'Erro interno processado com segurança.' });
+});
+
 app.listen(PORT, "0.0.0.0", () => {
+
+// [AutoPatch] Graceful Shutdown
+const server = app.listen(PORT);
+process.on('SIGTERM', () => {
+  console.log('SIGTERM recebido: encerrando conexões...');
+  server.close(() => process.exit(0));
+});
   // Log de desenvolvimento removido em produção pelo AutoPatch
   // Log de desenvolvimento removido em produção pelo AutoPatch
 });
