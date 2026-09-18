@@ -9,7 +9,7 @@ import { showToast } from "../utils/toast";
 interface AddLicitacaoModalProps {
   isOpen: boolean;
   onClose: () => void;
-  user: any;
+  user: unknown;
   isGuestMode: boolean;
   onSave: (newItem: Licitacao) => void;
 }
