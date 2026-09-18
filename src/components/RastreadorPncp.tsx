@@ -115,7 +115,7 @@ export default function RastreadorPncp({
 
   useEffect(() => {
     if (!hasSearched) {
-      console.log("[RastreadorPncp] Busca inicial automática");
+  // Log de desenvolvimento removido em produção pelo AutoPatch
       onSearch({
         searchTerm: searchTerm,
         uf: selectedUf,
