@@ -49,7 +49,7 @@ export async function getClientAuthToken(): Promise<string> {
         return idToken;
       }
     } catch (e) {
-      console.warn('[Firebase] Falha ao obter token nativo:', e);
+      console.warn('[Firebase] Falha ao obter [REDACTED] nativo:', e);
     }
   }
 
