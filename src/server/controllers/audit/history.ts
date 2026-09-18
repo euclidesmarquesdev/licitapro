@@ -19,7 +19,7 @@ export async function handleGetAuditHistory(req: express.Request, res: express.R
     const logs = await getAuditLogsFromFirestore(token, verifiedUser.uid);
     res.json({ success: true, logs });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Audit History] Erro:", err);
     res.json({ success: true, logs: getInMemoryAuditLogs() });
   }
